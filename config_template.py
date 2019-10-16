@@ -1,0 +1,9 @@
+telegram_token = ''
+rutracker_user = ''
+rutracker_password = ''
+proxy = ''
+download_folder = ''
+synology_api_url = ''
+synology_user = ''
+synology_password = ''
+allowed_telegram_users_id = []
