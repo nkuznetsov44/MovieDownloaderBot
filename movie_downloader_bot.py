@@ -4,6 +4,7 @@ from rutracker.rutracker import Rutracker
 from synoapi.syno_download_station_api import SynoDownloadStationTaskApi
 from telegram_types import Message, CallbackQuery, ReplyMarkup, InlineKeyboardButton
 import logging
+import math
 
 
 emoji = {
@@ -18,6 +19,14 @@ emoji = {
     'Floppy Disk': '💾',
     'Outbox Tray': '📤',
     'Inbox Tray': '📥',
+    'Rocket': '🚀',
+    'Trash': '🗑️',
+    'Red Circle': '🔴',
+    'Green Circle': '🟢',
+    'Black Circle': '⚫',
+    'Refresh': '🔄',
+    'Progress Bar Filled': '▰',
+    'Progress Bar Empty': '▱',
 }
 
 
@@ -132,11 +141,39 @@ class MovieDownloaderBot:
     def _format_torrents(self, torrents):
         return ''.join(map(self._format_torrent_block, torrents))
 
+    def _format_percentage(self, percentage, progress_bar_length=14):
+        return (
+            emoji['Progress Bar Filled'] * math.floor(percentage * progress_bar_length / 100.0) +
+            emoji['Progress Bar Empty'] * math.ceil((100.0 - percentage) * progress_bar_length / 100.0) +
+            ' {:.2f}%'.format(percentage)
+        )
+
+    def _format_syno_task_block(self, task):
+        if task.status == 'downloading':
+            bullet_emoji = emoji['Green Circle']
+        elif task.status == 'finished':
+            bullet_emoji = emoji['Red Circle']
+        else:
+            bullet_emoji = emoji['Black Circle']
+        return (
+            (
+                '{bullet} *{title}*```\n\n' +
+                '  {speed_emoji}{speed} {size_emoji}{size}' +
+                '  {percentage}```\n\n'
+            ).format(
+                bullet=bullet_emoji,
+                title=task.title,
+                speed_emoji=emoji['Rocket'],
+                speed=_fixed_size_str(_sizeof_fmt(task.download_speed) + '/s', 11),
+                size_emoji=emoji['Floppy Disk'],
+                size=_fixed_size_str(_sizeof_fmt(task.size), 9),
+                percentage=self._format_percentage(task.progress_percentage)
+            )
+        )
+
     def _format_syno_tasks(self, tasks):
         if tasks:
-            return '\n'.join(['{title} is {status} at {speed}, {percentage}% completed'.format(
-                title=t.title, status=t.status, speed=t.download_speed, percentage=t.progress_percentage
-                ) for t in tasks])
+            return ''.join(map(self._format_syno_task_block, tasks))
         return 'Нет активных задач'
 
     class CallbackCommand:
@@ -144,6 +181,7 @@ class MovieDownloaderBot:
         previous = 'prev'
         next = 'next'
         last = 'last'
+        refresh = 'refresh'
 
     def search_result_page_to_message(self, search_result_page, as_existing_message=None):
         message_body = self._format_torrents(search_result_page.torrents)
@@ -159,6 +197,17 @@ class MovieDownloaderBot:
             as_existing_message.parse_mode = 'Markdown'
             return as_existing_message
         return Message(message_body + footer, reply_markup=reply_markup, parse_mode='Markdown')
+
+    def syno_tasks_to_message(self, tasks, as_existing_message=None):
+        message_body = self._format_syno_tasks(tasks)
+        refresh = InlineKeyboardButton(emoji['Refresh'], self.CallbackCommand.refresh)
+        reply_markup = ReplyMarkup(inline_keyboard=[[refresh]])
+        if as_existing_message:
+            as_existing_message.text = message_body
+            as_existing_message.reply_markup = reply_markup
+            as_existing_message.parse_mode = 'Markdown'
+            return as_existing_message
+        return Message(message_body, reply_markup=reply_markup, parse_mode='Markdown')
 
     def _user_is_allowed(self, user_id):
         if self.allowed_users_id:
@@ -243,7 +292,7 @@ class MovieDownloaderBot:
             self.rutracker.login()
         filename = self.rutracker.download(incoming_message.text[3:])
         self.log.info('Starting {}'.format(filename))
-        self._reply_to(incoming_message, Message('Начал качать'))
+        self._reply_to(incoming_message, Message('Начал качать. Статус загрузок: /status'))
 
     def _handle_rutracker_search(self, incoming_message):
         if not self.rutracker.logged_in:
@@ -260,36 +309,38 @@ class MovieDownloaderBot:
 
     def handle_callback_query(self, callback_query):
         message = callback_query.message
-        current_page = self.current_pages.get((message.chat_id, message.message_id))
-        if current_page:
-            if callback_query.data == self.CallbackCommand.next:
-                if current_page.next:
-                    self._send_or_edit_message(self.search_result_page_to_message(
-                        current_page.next, as_existing_message=message
-                    ))
-                    self.current_pages[(message.chat_id, message.message_id)] = current_page.next
-            elif callback_query.data == self.CallbackCommand.previous:
-                if current_page.previous:
-                    self._send_or_edit_message(self.search_result_page_to_message(
-                        current_page.previous, as_existing_message=message
-                    ))
-                    self.current_pages[(message.chat_id, message.message_id)] = current_page.previous
-            elif callback_query.data == self.CallbackCommand.last:
-                self._send_or_edit_message(self.search_result_page_to_message(
-                    current_page.last, as_existing_message=message
-                ))
-                self.current_pages[(message.chat_id, message.message_id)] = current_page.last
-            elif callback_query.data == self.CallbackCommand.first:
-                self._send_or_edit_message(self.search_result_page_to_message(
-                    current_page.first, as_existing_message=message
-                ))
-                self.current_pages[(message.chat_id, message.message_id)] = current_page.first
+        if callback_query.data == self.CallbackCommand.refresh:
+            tasks = self.syno_download_station.list(additional=['transfer'])
+            self._send_or_edit_message(self.syno_tasks_to_message(tasks, as_existing_message=message))
         else:
-            self.log.warning('Current page not found for chat_id = {} and message_id = {}'.format(
-                message.chat_id, message.message_id))
+            current_page = self.current_pages.get((message.chat_id, message.message_id))
+            if current_page:
+                if callback_query.data == self.CallbackCommand.next:
+                    if current_page.next:
+                        self._send_or_edit_message(self.search_result_page_to_message(
+                            current_page.next, as_existing_message=message
+                        ))
+                        self.current_pages[(message.chat_id, message.message_id)] = current_page.next
+                elif callback_query.data == self.CallbackCommand.previous:
+                    if current_page.previous:
+                        self._send_or_edit_message(self.search_result_page_to_message(
+                            current_page.previous, as_existing_message=message
+                        ))
+                        self.current_pages[(message.chat_id, message.message_id)] = current_page.previous
+                elif callback_query.data == self.CallbackCommand.last:
+                    self._send_or_edit_message(self.search_result_page_to_message(
+                        current_page.last, as_existing_message=message
+                    ))
+                    self.current_pages[(message.chat_id, message.message_id)] = current_page.last
+                elif callback_query.data == self.CallbackCommand.first:
+                    self._send_or_edit_message(self.search_result_page_to_message(
+                        current_page.first, as_existing_message=message
+                    ))
+                    self.current_pages[(message.chat_id, message.message_id)] = current_page.first
+            else:
+                self.log.warning('Current page not found for chat_id = {} and message_id = {}'.format(
+                    message.chat_id, message.message_id))
 
     def _handle_download_status(self, incoming_message):
         tasks = self.syno_download_station.list(additional=['transfer'])
-        self.log.info(tasks)
-        ans = Message(self._format_syno_tasks(tasks))
-        self._reply_to(incoming_message, ans)
+        self._reply_to(incoming_message, self.syno_tasks_to_message(tasks))

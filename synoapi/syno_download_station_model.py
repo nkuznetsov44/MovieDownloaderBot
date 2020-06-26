@@ -15,6 +15,19 @@ class SynoDownloadStationAdditional(object):
         self.peer = None
 
 
+class SynoDownloadStationTaskStatus(object):
+    waiting = 'waiting'
+    downloading = 'downloading'
+    paused = 'paused'
+    finishing = 'finishing'
+    finished = 'finished'
+    hash_checking = 'hash_checking'
+    seeding = 'seeding'
+    filehosting_waiting = 'filehosting_waiting'
+    extracting = 'extracting'
+    error = 'error'
+
+
 class SynoDownloadStationTask(object):
     def __init__(self, **kwargs):
         self.id = kwargs.pop('id', None)

@@ -13,7 +13,7 @@ params = {
     'rutracker_user': config.rutracker_user,
     'rutracker_password': config.rutracker_password,
     'download_folder': config.download_folder,
-    'proxy': config.proxy,
+    # 'proxy': config.proxy,
     'syno_api_url': config.synology_api_url,
     'syno_user': config.synology_user,
     'syno_password': config.synology_password,
@@ -27,5 +27,5 @@ if __name__ == '__main__':
             response = bot.get_updates(timeout=30)
             bot.handle_response(response)
         except Exception as e:
-            log.error(e)
+            log.error('Error', exc_info=True)
             time.sleep(30)

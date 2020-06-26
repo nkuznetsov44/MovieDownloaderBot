@@ -61,7 +61,6 @@ class SynoDownloadStationTaskApi(SynoAuthenticatedApi):
         if additional:
             params['additional'] = ','.join(additional)
         resp_data = self.get_request(method='list', **params)
-        print(resp_data)
         return [SynoDownloadStationTask(**t) for t in resp_data['tasks']]
 
     def get_info(self, task_ids, additional=None):
@@ -86,7 +85,7 @@ class SynoDownloadStationTaskApi(SynoAuthenticatedApi):
         params = { 'id': ','.join(task_ids) }
         if additional:
             params['additional'] = ','.join(additional)
-        resp_data = self.get_request(method = 'getinfo', **params)
+        resp_data = self.get_request(method='getinfo', **params)
         return [SynoDownloadStationTask(**t) for t in resp_data['tasks']]
 
     def delete(self, task_ids, force_complete):
