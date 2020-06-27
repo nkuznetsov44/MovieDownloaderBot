@@ -5,7 +5,7 @@ from json import JSONDecodeError
 
 
 class TelegramApiException(Exception):
-    def __init__(self, *args, error_code: Optional[int] = None, description: Optional[str] = None):
+    def __init__(self, *args, error_code: Optional[int] = None, description: Optional[str] = None) -> None:
         super(TelegramApiException, self).__init__(*args)
         self.error_code = error_code
         self.description = description
@@ -19,7 +19,7 @@ class Bot:
     def __init__(
         self,
         token: str
-    ):
+    ) -> None:
         self.token = token
         self.url = 'https://api.telegram.org/bot' + token + '/'
 
