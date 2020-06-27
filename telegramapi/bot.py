@@ -1,6 +1,6 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import requests
-from telegramapi.types import Update
+from telegramapi.types import Update, Message, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from json import JSONDecodeError
 
 
@@ -75,3 +75,25 @@ class Bot:
         result = self._make_request('get_updates', params=params)
         if len(result) > 0:
             return Update.schema.loads(result, many=True)
+
+    def send_message(
+        self,
+        chat_id: Union[int, str],
+        text: str,
+        parse_mode: Optional[str] = None,
+        disable_web_page_preview: Optional[bool] = None,
+        disable_notification: Optional[bool] = None,
+        reply_to_message_id: Optional[int] = None,
+        reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None
+    ) -> Message:
+        params = {
+            'chat_id': chat_id,
+            'text': text,
+            'parse_mode': parse_mode,
+            'disable_web_page_preview': disable_web_page_preview,
+            'disable_notification': disable_notification,
+            'reply_to_message_id': reply_to_message_id,
+            'reply_markup': reply_markup.to_dict()
+        }
+        result = self._make_request('sendMessage', http_method='post', params=params)
+        return Message.from_dict(result)

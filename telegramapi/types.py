@@ -57,6 +57,12 @@ class InlineKeyboardMarkup:
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class ReplyKeyboardMarkup:
+    pass
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class Message:
     message_id: int
     from_user: Optional[User] = field(metadata=config(field_name='from'), default=None)
