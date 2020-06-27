@@ -1,175 +1,139 @@
-from abc import ABC, abstractmethod, abstractclassmethod
 from typing import Optional, List
-import json
+from dataclasses import dataclass, field
+from dataclasses_json import dataclass_json, Undefined, config
 
 
-class JsonSerializable(ABC):
-    @abstractmethod
-    def to_json(self):
-        raise NotImplementedError
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class User:
+    user_id: int = field(metadata=config(field_name='id'))
+    is_bot: bool
+    first_name: str
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    language_code: Optional[str] = None
+    can_join_groups: Optional[bool] = None
+    can_read_all_group_messages: Optional[bool] = None
+    supports_inline_queries: Optional[bool] = None
 
 
-class Dictionaryable(ABC):
-    @abstractmethod
-    def to_dict(self):
-        raise NotImplementedError
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class Chat:
+    chat_id: int = field(metadata=config(field_name='id'))
+    chat_type: str = field(metadata=config(field_name='type'))
+    title: Optional[str] = None
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    # photo: Optional[ChatPhoto] = None
+    description: Optional[str] = None
+    invite_link: Optional[str] = None
+    pinned_message: Optional['Message'] = None
+    # permissions: Optional[ChatPermissions] = None
+    show_mode_delay: Optional[int] = None
+    sticker_set_name: Optional[str] = None
+    can_set_sticker_set: Optional[bool] = None
 
 
-class JsonDeserializable(ABC):
-    @classmethod
-    @abstractclassmethod
-    def from_json(cls, json_string):
-        raise NotImplementedError
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class InlineKeyboardButton:
+    text: str
+    url: Optional[str] = None
+    # login_url: Optional[LoginUrl] = None
+    callback_data: Optional[str] = None
+    switch_inline_query: Optional[str] = None
+    switch_inline_query_current_chat: Optional[str] = None
+    # callback_game: Optional[CallbackGame] = None
+    pay: Optional[bool] = None
 
 
-class User(JsonSerializable, JsonDeserializable, Dictionaryable):
-    def __init__(self, user_id: int, username: Optional[str]):
-        self.user_id = user_id
-        self.username = username
-
-    def to_dict(self):
-        return {
-            'id': self.user_id,
-            'username': self.username
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-    @classmethod
-    def from_json(cls, json_string):
-        obj = json.loads(json_string)
-        user_id = obj['id']
-        username = obj.get('username')
-        return cls(user_id, username)
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class InlineKeyboardMarkup:
+    inline_keyboard: List[List[InlineKeyboardButton]]
 
 
-class Chat(JsonSerializable, JsonDeserializable, Dictionaryable):
-    def __init__(self, chat_id: int):
-        self.chat_id = chat_id
-
-    def to_dict(self):
-        return {
-            'id': self.chat_id
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-    @classmethod
-    def from_json(cls, json_string):
-        if json_string is None:
-            return None
-        obj = json.loads(json_string)
-        chat_id = obj['id']
-        return cls(chat_id)
-
-
-class InlineKeyboardButton(JsonSerializable, Dictionaryable):
-    def __int__(
-        self,
-        url: Optional[str],
-        callback_data: Optional[str]
-    ):
-        self.url = url
-        self.callback_data = callback_data
-
-    def to_dict(self):
-        return {
-            'url': self.url,
-            'callback_data': self.callback_data
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-
-class InlineKeyboardMarkup(JsonSerializable, Dictionaryable):
-    def __init__(self, inline_keyboard: List[List[InlineKeyboardButton]]):
-        self.inline_keyboard = inline_keyboard
-
-    def to_dict(self):
-        return {
-            'inline_keyboard': [[button.to_dict() for button in row] for row in self.inline_keyboard]
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-
-class Message(JsonDeserializable):
-    def __init__(
-        self,
-        message_id: int,
-        from_user: Optional[User],
-        date: int,
-        chat: Chat,
-        text: Optional[str],
-        reply_markup: Optional[InlineKeyboardMarkup]
-    ):
-        self.message_id = message_id
-        self.from_user = from_user
-        self.date = date
-        self.chat = chat
-        self.text = text
-        self.reply_markup = reply_markup
-
-    @classmethod
-    def from_json(cls, json_string):
-        if json_string is None:
-            return None
-        obj = json.loads(json_string)
-        message_id = obj['message_id']
-        from_user = User.from_json(obj.get('from'))
-        date = obj['date']
-        chat = Chat.from_json(obj['chat'])
-        text = obj.get('text')
-        reply_markup = None
-        return cls(message_id, from_user, date, chat, text, reply_markup)
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class Message:
+    message_id: int
+    from_user: Optional[User] = field(metadata=config(field_name='from'), default=None)
+    date: int
+    chat: Chat
+    forward_from: Optional[User] = None
+    forward_from_chat: Optional[Chat] = None
+    forward_from_message_id: Optional[int] = None
+    forward_signature: Optional[str] = None
+    forward_sender_name: Optional[str] = None
+    forward_date: Optional[int] = None
+    reply_to_message: Optional['Message'] = None
+    via_bot: Optional[User] = None
+    edit_date: Optional[int] = None
+    media_group_id: Optional[str] = None
+    author_signature: Optional[str] = None
+    text: Optional[str] = None
+    # entities: Optional[List[MessageEntity]] = None
+    # animation: Optional[Animation] = None
+    # audio: Optional[Audio] = None
+    # document: Optional[Document] = None
+    # photo: Optional[List[PhotoSize]] = None
+    # sticker: Optional[Sticker] = None
+    # video: Optional[Video] = None
+    # video_note: Optional[VideoNote] = None
+    # voice: Optional[Voice] = None
+    caption: Optional[str] = None
+    # caption_entity: Optional[List[MessageEntity]] = None
+    # contact: Optional[Contact] = None
+    # dice: Optional[Dice] = None
+    # game: Optional[Game] = None
+    # poll: Optional[Poll] = None
+    # venue: Optional[Venue] = None
+    # location: Optional[Location] = None
+    new_chat_members: Optional[List[User]] = None
+    left_chat_member: Optional[User] = None
+    new_chat_title: Optional[str] = None
+    # new_chat_photo: Optional[List[PhotoSize]] = None
+    delete_chat_photo: Optional[bool] = None
+    group_chat_created: Optional[bool] = None
+    supergroup_chat_created: Optional[bool] = None
+    channel_chat_created: Optional[bool] = None
+    migrate_to_chat_id: Optional[int] = None
+    migrate_from_chat_id: Optional[int] = None
+    pinned_message: Optional[Message] = None
+    # invoice: Optional[Invoice] = None
+    # successful_payment: Optional[SuccessfulPayment] = None
+    connected_website: Optional[str] = None
+    # passport_data: Optional[PassportData] = None
+    reply_markup: Optional[InlineKeyboardMarkup] = None
 
 
-class CallbackQuery(JsonDeserializable):
-    def __init__(
-        self,
-        callback_query_id: str,
-        from_user: User,
-        message: Optional[Message],
-        data: Optional[str]
-    ):
-        self.callback_query_id = callback_query_id
-        self.from_user = from_user
-        self.message = message
-        self.data = data
-
-    @classmethod
-    def from_json(cls, json_string):
-        if json_string is None:
-            return None
-        obj = json.loads(json_string)
-        callback_query_id = obj['id']
-        user_from = User.from_json(obj['from'])
-        message = Message.from_json(obj.get('message'))
-        data = obj.get('data')
-        return cls(callback_query_id, user_from, message, data)
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class CallbackQuery:
+    callback_query_id: str = field(metadata=config(field_name='id'))
+    from_user: str = field(metadata=config(field_name='from'))
+    message: Optional[Message] = None
+    inline_message_id: Optional[str] = None
+    chat_instance: str
+    data: Optional[str] = None
+    game_short_name: Optional[str] = None
 
 
-class Update(JsonDeserializable):
-    def __init__(
-        self,
-        update_id: int,
-        message: Optional[Message],
-        callback_query: Optional[CallbackQuery]
-    ):
-        self.update_id = update_id
-        self.message = message
-        self.callback_query = callback_query
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class Update:
+    update_id: int
+    message: Optional[Message] = None
+    edited_message: Optional[Message] = None
+    channel_post: Optional[Message] = None
+    edited_channel_post: Optional[Message] = None
+    # inline_query: Optional[InlineQuery] = None
+    # chosen_inline_result = Optional[ChosenInlineResult] = None
+    callback_query: Optional[CallbackQuery] = None
+    # shipping_query: Optional[ShippingQuery] = None
+    # pre_checkout_query: Optional[PreCheckoutQuery] = None
+    # poll: Optional[Poll] = None
+    # poll_answer: Optional[PollAnswer] = None
 
-    @classmethod
-    def from_json(cls, json_string):
-        if json_string is None:
-            return None
-        obj = json.loads(json_string)
-        update_id = obj['update_id']
-        message = Message.from_json(obj.get('message'))
-        callback_query = CallbackQuery.from_json(obj.get('callback_query'))
-        return cls(update_id, message, callback_query)
