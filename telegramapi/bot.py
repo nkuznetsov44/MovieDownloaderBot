@@ -33,9 +33,7 @@ class Bot:
         try:
             response_json = response.json()
         except JSONDecodeError as jde:
-            raise TelegramApiException(
-                f'Got invalid json\n{response.text.encode("utf8")}', jde
-            )
+            raise TelegramApiException(f'Got invalid json\n{response.text.encode("utf8")}', jde)
 
         try:
             if not response_json['ok']:
@@ -45,9 +43,7 @@ class Bot:
                 )
             return response_json['result']
         except KeyError as ke:
-            raise TelegramApiException(
-                f'Got unexpected json\n{response_json}', ke
-            )
+            raise TelegramApiException(f'Got unexpected json\n{response_json}', ke)
 
     def _make_request(
         self,
