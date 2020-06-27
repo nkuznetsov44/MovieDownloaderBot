@@ -136,4 +136,3 @@ class Update:
     # pre_checkout_query: Optional[PreCheckoutQuery] = None
     # poll: Optional[Poll] = None
     # poll_answer: Optional[PollAnswer] = None
-
