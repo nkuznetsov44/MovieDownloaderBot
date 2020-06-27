@@ -1,0 +1,14 @@
+beautifulsoup4==4.9.1
+certifi==2020.6.20
+chardet==3.0.4
+dataclasses-json==0.5.1
+idna==2.9
+marshmallow==3.6.1
+marshmallow-enum==1.5.1
+mypy-extensions==0.4.3
+requests==2.24.0
+soupsieve==2.0.1
+stringcase==1.2.0
+typing-extensions==3.7.4.2
+typing-inspect==0.6.0
+urllib3==1.25.9

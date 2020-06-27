@@ -77,15 +77,26 @@ class InlineKeyboardMarkup:
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
+class KeyboardButton:
+    text: str
+    request_contact: Optional[bool] = None
+    request_location: Optional[bool] = None
+    # request_poll: Optional[KeyboardButtonPollType]
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
 class ReplyKeyboardMarkup:
-    pass
+    keyboard: List[List[KeyboardButton]]
+    resize_keyboard: Optional[bool] = None
+    one_time_keyboard: Optional[bool] = None
+    selective: Optional[bool] = None
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class Message:
     message_id: int
-    from_user: Optional[User] = field(metadata=config(field_name='from'), default=None)
     date: int
     chat: Chat
     forward_from: Optional[User] = None
@@ -127,12 +138,13 @@ class Message:
     channel_chat_created: Optional[bool] = None
     migrate_to_chat_id: Optional[int] = None
     migrate_from_chat_id: Optional[int] = None
-    pinned_message: Optional[Message] = None
+    pinned_message: Optional['Message'] = None
     # invoice: Optional[Invoice] = None
     # successful_payment: Optional[SuccessfulPayment] = None
     connected_website: Optional[str] = None
     # passport_data: Optional[PassportData] = None
     reply_markup: Optional[InlineKeyboardMarkup] = None
+    from_user: Optional[User] = field(metadata=config(field_name='from'), default=None)
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
@@ -140,11 +152,11 @@ class Message:
 class CallbackQuery:
     callback_query_id: str = field(metadata=config(field_name='id'))
     from_user: str = field(metadata=config(field_name='from'))
-    message: Optional[Message] = None
-    inline_message_id: Optional[str] = None
     chat_instance: str
     data: Optional[str] = None
     game_short_name: Optional[str] = None
+    message: Optional[Message] = None
+    inline_message_id: Optional[str] = None
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
