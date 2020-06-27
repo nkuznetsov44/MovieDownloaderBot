@@ -11,6 +11,10 @@ class TelegramApiException(Exception):
         self.description = description
 
 
+ChatId = Union[int, str]
+ReplyMarkup = Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]
+
+
 class Bot:
     def __init__(
         self,
@@ -78,13 +82,13 @@ class Bot:
 
     def send_message(
         self,
-        chat_id: Union[int, str],
+        chat_id: ChatId,
         text: str,
         parse_mode: Optional[str] = None,
         disable_web_page_preview: Optional[bool] = None,
         disable_notification: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
-        reply_markup: Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]] = None
+        reply_markup: ReplyMarkup = None
     ) -> Message:
         params = {
             'chat_id': chat_id,
@@ -97,3 +101,10 @@ class Bot:
         }
         result = self._make_request('sendMessage', http_method='post', params=params)
         return Message.from_dict(result)
+
+    def send_chat_action(self, chat_id: ChatId, action: str) -> bool:
+        params = {
+            'chat_id': chat_id,
+            'action': action
+        }
+        return self._make_request('sendChatAction', params=params)

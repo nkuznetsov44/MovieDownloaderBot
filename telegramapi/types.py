@@ -1,6 +1,26 @@
 from typing import Optional, List
+from enum import Enum
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, Undefined, config
+
+
+class ChatAction(Enum):
+    typing = 'typing'
+    upload_photo = 'upload_photo'
+    record_video = 'record_video'
+    upload_video = 'upload_video'
+    record_audio = 'record_audio'
+    upload_audio = 'upload_audio'
+    upload_document = 'upload_document'
+    find_location = 'find_location'
+    record_video_note = 'record_video_note'
+    upload_video_note = 'upload_video_note'
+
+
+class ParseMode(Enum):
+    Markdown = 'Markdown'
+    MarkdownV2 = 'MarkdownV2'
+    HTML = 'HTML'
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
