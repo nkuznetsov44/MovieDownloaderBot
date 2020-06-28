@@ -23,6 +23,20 @@ class ParseMode(Enum):
     HTML = 'HTML'
 
 
+class UpdateType(Enum):
+    message = 'message'
+    edited_message = 'edited_message'
+    channel_post = 'channel_post'
+    edited_channel_post = 'edited_channel_post'
+    inline_query = 'inline_query'
+    chosen_inline_result = 'chosen_inline_result'
+    callback_query = 'callback_query'
+    shipping_query = 'shipping_query'
+    pre_checkout_query = 'pre_checkout_query'
+    poll = 'poll'
+    poll_answer = 'poll_answer'
+
+
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class User:

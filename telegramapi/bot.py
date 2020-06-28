@@ -1,10 +1,15 @@
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
+from abc import ABC, abstractmethod
 import requests
-from telegramapi.types import Update, Message, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from json import JSONDecodeError
 
 
-class TelegramApiException(Exception):
+class TelegramBotException(Exception):
+    pass
+
+
+class TelegramApiException(TelegramBotException):
     def __init__(self, *args, error_code: Optional[int] = None, description: Optional[str] = None) -> None:
         super(TelegramApiException, self).__init__(*args)
         self.error_code = error_code
@@ -13,6 +18,45 @@ class TelegramApiException(Exception):
 
 ChatId = Union[int, str]
 ReplyMarkup = Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]
+MessageHandler = Callable[[Message], None]
+CallbackQueryHandler = Callable[[CallbackQuery], None]
+
+
+T = TypeVar('T')
+
+
+class Handler(Generic[T], ABC):
+    @abstractmethod
+    def handle(self, obj: T) -> bool:
+        """Returns True if an object was successfully handled"""
+        pass
+
+
+class _MessageHandler(Handler[Message]):
+    def __init__(self, handler_func: MessageHandler, commands: Optional[List[str]] = None) -> None:
+        self.__handler_func = handler_func
+        self.__commands = commands
+
+    def handle(self, message: Message) -> bool:
+        if not self.__commands or any(message.text.startswith(f'/{command}') for command in self.__commands):
+            self.__handler_func(message)
+            return True
+        return False
+
+
+class _CallbackQueryHandler(Handler[CallbackQuery]):
+    def __init__(self, handler_func: CallbackQueryHandler, callback_query_data: Optional[List[str]] = None) -> None:
+        self.__handler_func = handler_func
+        self.__callback_query_data = callback_query_data
+
+    def handle(self, callback_query: CallbackQuery) -> bool:
+        if (
+                not self.__callback_query_data or
+                any(callback_query.data and callback_query.data.startswith(cqd) for cqd in self.__callback_query_data)
+        ):
+            self.__handler_func(callback_query)
+            return True
+        return False
 
 
 class Bot:
@@ -22,6 +66,51 @@ class Bot:
     ) -> None:
         self.token = token
         self.url = 'https://api.telegram.org/bot' + token + '/'
+        self.last_update_id = None
+        self.message_handlers: List[Handler[Message]] = []
+        self.callback_query_handlers: List[Handler[CallbackQuery]] = []
+
+    def message_handler(self, commands: Optional[List[str]] = None) -> Callable[[MessageHandler], MessageHandler]:
+        def message_handler_decorator(message_handler: MessageHandler) -> MessageHandler:
+            self.message_handlers.append(_MessageHandler(handler_func=message_handler, commands=commands))
+            return message_handler
+        return message_handler_decorator
+
+    def callback_query_handler(self) -> Callable[[CallbackQueryHandler], CallbackQueryHandler]:
+        def callback_query_handler_decorator(callback_query_handler: CallbackQueryHandler) -> CallbackQueryHandler:
+            self.callback_query_handlers.append(_CallbackQueryHandler(handler_func=callback_query_handler))
+            return callback_query_handler
+        return callback_query_handler_decorator
+
+    def long_polling(self, timeout: int = 30) -> None:
+        while 1 == 1:
+            offset = None
+            if self.last_update_id:
+                offset = self.last_update_id + 1
+            updates = self.get_updates(offset=offset, timeout=timeout)
+            self.handle_updates(updates)
+
+    def handle_updates(self, updates: List[Update]) -> None:
+        for update in updates:
+            if update.message:
+                self.handle_message(update.message)
+            elif update.callback_query:
+                self.handle_callback_query(update.callback_query)
+
+    def handle_message(self, message: Message) -> None:
+        message_was_handled = any(handler.handle(message) for handler in self.message_handlers)
+        if not message_was_handled:
+            raise TelegramBotException(
+                f'Message {Message} was not handled because no suitable message handler was provided.'
+            )
+
+    def handle_callback_query(self, callback_query: CallbackQuery) -> None:
+        callback_query_was_handled = any(handler.handle(callback_query) for handler in self.callback_query_handlers)
+        if not callback_query_was_handled:
+            raise TelegramBotException(
+                f'Callback query {CallbackQuery} was not handled'
+                'because no suitable callback query handler was provided.'
+            )
 
     @staticmethod
     def _check_response(response: requests.Response) -> Any:
@@ -51,6 +140,7 @@ class Bot:
         http_method: Optional[str] = 'get',
         params: Optional[Dict[str, Any]] = None
     ) -> Any:
+        print(f'Making request to {self.url + api_method}')
         if http_method == 'get':
             response = requests.get(self.url + api_method, params=params)
         elif http_method == 'post':
@@ -58,6 +148,9 @@ class Bot:
         else:
             raise TelegramApiException(f'Unsupported http method {http_method}')
         return self._check_response(response)
+
+    def get_me(self) -> User:
+        return User.from_dict(self._make_request('getMe'))
 
     def get_updates(
         self,
@@ -72,9 +165,11 @@ class Bot:
             'timeout': timeout,
             'allowed_updates': allowed_updates
         }
-        result = self._make_request('get_updates', params=params)
+        result = self._make_request('getUpdates', params=params)
         if len(result) > 0:
-            return Update.schema.loads(result, many=True)
+            updates = Update.schema().load(result, many=True)  # TypeError: the JSON object must be str, bytes or bytearray, not list
+            self.last_update_id = updates[-1].update_id
+            return updates
 
     def send_message(
         self,
@@ -93,8 +188,9 @@ class Bot:
             'disable_web_page_preview': disable_web_page_preview,
             'disable_notification': disable_notification,
             'reply_to_message_id': reply_to_message_id,
-            'reply_markup': reply_markup.to_dict()
         }
+        if reply_markup:
+            params['reply_markup']: reply_markup.to_dict()
         result = self._make_request('sendMessage', http_method='post', params=params)
         return Message.from_dict(result)
 
