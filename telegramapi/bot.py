@@ -88,7 +88,8 @@ class Bot:
             if self.last_update_id:
                 offset = self.last_update_id + 1
             updates = self.get_updates(offset=offset, timeout=timeout)
-            self.handle_updates(updates)
+            if updates:
+                self.handle_updates(updates)
 
     def handle_updates(self, updates: List[Update]) -> None:
         for update in updates:
@@ -140,7 +141,6 @@ class Bot:
         http_method: Optional[str] = 'get',
         params: Optional[Dict[str, Any]] = None
     ) -> Any:
-        print(f'Making request to {self.url + api_method}')
         if http_method == 'get':
             response = requests.get(self.url + api_method, params=params)
         elif http_method == 'post':
