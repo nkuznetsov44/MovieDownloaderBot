@@ -39,4 +39,3 @@ class TelegramUser(Base):
             f'{super().__repr__()}: '
             f'{{"user_id": {self.user_id}, "username": {self.username}}}'
         )
-

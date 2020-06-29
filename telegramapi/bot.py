@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
 from abc import ABC, abstractmethod
 import requests
-from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
 from json import JSONDecodeError
 
 
@@ -14,6 +14,15 @@ class TelegramApiException(TelegramBotException):
         super(TelegramApiException, self).__init__(*args)
         self.error_code = error_code
         self.description = description
+
+    def __repr__(self) -> str:
+        return (
+            super(TelegramApiException, self).__repr__() +
+            f'\nErrorCode: "{self.error_code}"\nDescription: "{self.description}"'
+        )
+
+    def __str__(self):
+        return self.__repr__()
 
 
 ChatId = Union[int, str]
@@ -116,8 +125,18 @@ class Bot:
     @staticmethod
     def _check_response(response: requests.Response) -> Any:
         if response.status_code != requests.codes.ok:
+            error_code = None
+            description = None
+            try:
+                response_json = response.json()
+                error_code = response_json['error_code'],
+                description = response_json['description']
+            except Exception:
+                pass
             raise TelegramApiException(
-                f'Got status code {response.status_code}: {response.reason}\n{response.text.encode("utf8")}'
+                f'Got status code {response.status_code}: {response.reason}\n{response.text.encode("utf8")}',
+                error_code=error_code,
+                description=description
             )
 
         try:
@@ -175,7 +194,7 @@ class Bot:
         self,
         chat_id: ChatId,
         text: str,
-        parse_mode: Optional[str] = None,
+        parse_mode: Optional[ParseMode] = None,
         disable_web_page_preview: Optional[bool] = None,
         disable_notification: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
@@ -184,13 +203,14 @@ class Bot:
         params = {
             'chat_id': chat_id,
             'text': text,
-            'parse_mode': parse_mode,
             'disable_web_page_preview': disable_web_page_preview,
             'disable_notification': disable_notification,
             'reply_to_message_id': reply_to_message_id,
         }
         if reply_markup:
-            params['reply_markup']: reply_markup.to_dict()
+            params['reply_markup'] = reply_markup.to_dict()
+        if parse_mode:
+            params['parse_mode'] = parse_mode.value
         result = self._make_request('sendMessage', http_method='post', params=params)
         return Message.from_dict(result)
 
