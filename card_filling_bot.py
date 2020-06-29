@@ -1,12 +1,20 @@
 from typing import List
 from enum import Enum
 import re
+import logging
+import sys
+from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot
 from telegramapi.types import Message, ParseMode
-from model import TelegramUser
+from model import TelegramUser, CardFill
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
+
+
+FORMAT = '%(asctime)-15s %(message)s'
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+log = logging.getLogger(__name__)
 
 
 bot = Bot(token=test_token)
@@ -14,13 +22,6 @@ bot = Bot(token=test_token)
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
 engine = create_engine(SQLALCHEMY_DATABASE_URI)
 Session = scoped_session(sessionmaker(bind=engine))
-
-
-"""
-@bot.message_handler(commands=['start', 'help'])
-def dummy_handler(message: Message):
-    bot.send_message(chat_id=message.chat.chat_id, text='Hello, world!')
-"""
 
 
 class Month(Enum):
@@ -70,17 +71,60 @@ months_names = {
 }
 
 
+numbers_regexp = re.compile(r'[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?')
+
+
 def find_months(text: str) -> List[Month]:
     results: List[Month] = []
-    for month, month_re in months_regexps.items():
-        result = re.search(month_re, text, re.IGNORECASE)
-        if result:
-            results.append(month)
+    if text:
+        for word in text.split(' '):
+            for month, month_re in months_regexps.items():
+                result = re.search(month_re, word, re.IGNORECASE)
+                if result:
+                    results.append(month)
     return results
 
 
-@bot.message_handler(commands=['stat'])
-def show_user_stat(message: Message):
+def find_numbers(text: str) -> List[float]:
+    return re.findall(numbers_regexp, text)
+
+
+@bot.message_handler()
+def add_new_fill(message: Message) -> None:
+    if message.text:
+        numbers = list(find_numbers(message.text))
+        if numbers:
+            if len(numbers) > 1:
+                bot.send_message(
+                    chat_id=message.chat.chat_id,
+                    text='Отправьте суммы пополнения по одной в каждом сообщении.'
+                )
+            else:
+                db_session = Session()
+                try:
+                    card_fill = CardFill(
+                        user_id=message.from_user.user_id,
+                        fill_date=datetime.fromtimestamp(message.date),
+                        amount=float(numbers[0])
+                    )
+                    db_session.add(card_fill)
+                    db_session.commit()
+                    bot.send_message(
+                        chat_id=message.chat.chat_id,
+                        text=f'Принято {numbers[0]}р. от @{message.from_user.username}.'
+                    )
+                except Exception:
+                    bot.send_message(
+                        chat_id=message.chat.chat_id,
+                        text='Ошибка добавления суммы пополнения. Попробуйте еще раз позже.'
+                    )
+                    raise
+                finally:
+                    Session.remove()
+
+
+@bot.message_handler(commands=['my'])
+def my_fills(message: Message) -> None:
     db_session = Session()
     try:
         from_user = db_session.query(TelegramUser).get(message.from_user.user_id)
@@ -105,33 +149,35 @@ def show_user_stat(message: Message):
         Session.remove()
 
 
-@bot.message_handler()
-def per_month(message: Message):
+@bot.message_handler(commands=['stat'])
+def per_month(message: Message) -> None:
     months = find_months(message.text)
     if len(months) == 0:
         bot.send_message(
             chat_id=message.chat.chat_id,
-            text='Укажите месяц после команды, например "/stat январь".'
+            text='Укажите месяц или месяцы после команды, например "/stat январь февраль".'
         )
-        return
+    else:
+        db_session = Session()
+        try:
+            message_text = ''
+            for month in months:
+                message_text = message_text + f'*{months_names[month]}:*\n'
+                res = db_session.execute(
+                    f'select username, amount from monthly_report where month_num = {month.value}'
+                ).fetchall()
+                if len(res) == 0:
+                    message_text = message_text + 'Не было пополнений.\n\n'
+                else:
+                    message_text = message_text + '\n'.join(f'@{row[0]}: {row[1]}' for row in res) + '\n\n'
+            message_text = message_text.replace('_', '\\_').replace('.', '\\.')
+            bot.send_message(chat_id=message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
+        finally:
+            Session.remove()
 
-    db_session = Session()
-    try:
-        message_text = ''
-        for month in months:
-            message_text = message_text + f'*{months_names[month]}:*\n'
-            res = db_session.execute(
-                f'select username, amount from monthly_report where month_num = {month.value}'
-            ).fetchall()
-            if len(res) == 0:
-                message_text = message_text + 'Не было пополнений.\n\n'
-            else:
-                message_text = message_text + '\n'.join(f'@{row[0]}: {row[1]}' for row in res) + '\n\n'
-        message_text = message_text.replace('_', '\\_').replace('.', '\\.')
-        bot.send_message(chat_id=message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
-    finally:
-        Session.remove()
 
-
-print(bot.get_me())
-bot.long_polling()
+try:
+    bot.long_polling()
+except Exception as e:
+    log.error(e, exc_info=True)
+    raise

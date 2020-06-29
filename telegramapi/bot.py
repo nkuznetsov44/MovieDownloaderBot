@@ -47,7 +47,7 @@ class _MessageHandler(Handler[Message]):
         self.__commands = commands
 
     def handle(self, message: Message) -> bool:
-        if not self.__commands or any(message.text.startswith(f'/{command}') for command in self.__commands):
+        if not self.__commands or not message.text or any(message.text.startswith(f'/{command}') for command in self.__commands):
             self.__handler_func(message)
             return True
         return False
@@ -108,14 +108,18 @@ class Bot:
                 self.handle_callback_query(update.callback_query)
 
     def handle_message(self, message: Message) -> None:
-        message_was_handled = any(handler.handle(message) for handler in self.message_handlers)
+        message_was_handled = False
+        for handler in self.message_handlers:
+            message_was_handled = handler.handle(message) or message_was_handled
         if not message_was_handled:
             raise TelegramBotException(
                 f'Message {Message} was not handled because no suitable message handler was provided.'
             )
 
     def handle_callback_query(self, callback_query: CallbackQuery) -> None:
-        callback_query_was_handled = any(handler.handle(callback_query) for handler in self.callback_query_handlers)
+        callback_query_was_handled = False
+        for handler in self.callback_query_handlers:
+            callback_query_was_handled = handler.handle(callback_query) or callback_query_was_handled
         if not callback_query_was_handled:
             raise TelegramBotException(
                 f'Callback query {CallbackQuery} was not handled'
