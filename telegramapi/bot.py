@@ -1,8 +1,8 @@
 from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
 from abc import ABC, abstractmethod
+import json
 import requests
 from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
-from json import JSONDecodeError
 
 
 class TelegramBotException(Exception):
@@ -67,30 +67,40 @@ def message_handler(commands: Optional[List[str]] = None) -> Callable[[MessageHa
 
 
 class CallbackQueryHandler(Handler[CallbackQuery]):
-    def __init__(self, handler_func: CallbackQueryHandlerFunc, callback_query_data: Optional[List[str]] = None) -> None:
+    def __init__(self, handler_func: CallbackQueryHandlerFunc, accepted_data: Optional[List[str]] = None) -> None:
         super().__init__(handler_func)
         self.__handler_func = handler_func
-        self.__callback_query_data = callback_query_data
+        self.__accepted_data = accepted_data
 
     def should_handle(self, callback_query: CallbackQuery) -> bool:
         return (
-            not self.__callback_query_data or
+            not self.__accepted_data or
             not callback_query.data or
-            any(callback_query.data and callback_query.data.startswith(cqd) for cqd in self.__callback_query_data)
+            any(callback_query.data and callback_query.data.startswith(cqd) for cqd in self.__accepted_data)
         )
+
+
+def callback_query_handler(accepted_data: Optional[List[str]] = None) -> Callable[[CallbackQueryHandlerFunc], CallbackQueryHandler]:
+    def wrapper(handler_func: CallbackQueryHandlerFunc) -> CallbackQueryHandler:
+        return CallbackQueryHandler(handler_func, accepted_data=accepted_data)
+    return wrapper
 
 
 class BotMeta(type):
     def __new__(mcs, name, bases, attrs):
         message_handlers = attrs['_message_handlers'] = list()
+        callback_query_handlers = attrs['_callback_query_handlers'] = list()
 
         # inherit bases handlers
         for base in bases:
             message_handlers.extend(getattr(base, '_message_handlers'))
+            callback_query_handlers.extend(getattr(base, '_callback_query_handlers'))
 
         for attr in attrs.values():
             if isinstance(attr, MessageHandler):
                 message_handlers.append(attr)
+            elif isinstance(attr, CallbackQueryHandler):
+                callback_query_handlers.append(attr)
 
         return type.__new__(mcs, name, bases, attrs)
 
@@ -172,7 +182,7 @@ class Bot(metaclass=BotMeta):
 
         try:
             response_json = response.json()
-        except JSONDecodeError as jde:
+        except json.JSONDecodeError as jde:
             raise TelegramApiException(f'Got invalid json\n{response.text.encode("utf8")}', jde)
 
         try:
@@ -239,7 +249,7 @@ class Bot(metaclass=BotMeta):
             'reply_to_message_id': reply_to_message_id,
         }
         if reply_markup:
-            params['reply_markup'] = reply_markup.to_dict()
+            params['reply_markup'] = reply_markup.to_json(allow_nan=False)
         if parse_mode:
             params['parse_mode'] = parse_mode.value
         result = self._make_request('sendMessage', http_method='post', params=params)

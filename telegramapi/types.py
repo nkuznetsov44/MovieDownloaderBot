@@ -74,13 +74,13 @@ class Chat:
 @dataclass
 class InlineKeyboardButton:
     text: str
-    url: Optional[str] = None
+    # url: Optional[str] = None
     # login_url: Optional[LoginUrl] = None
     callback_data: Optional[str] = None
-    switch_inline_query: Optional[str] = None
-    switch_inline_query_current_chat: Optional[str] = None
+    # switch_inline_query: Optional[str] = None
+    # switch_inline_query_current_chat: Optional[str] = None
     # callback_game: Optional[CallbackGame] = None
-    pay: Optional[bool] = None
+    # pay: Optional[bool] = None
 
 
 @dataclass_json(undefined=Undefined.EXCLUDE)
@@ -112,6 +112,13 @@ class ReplyKeyboardMarkup:
 class Message:
     message_id: int
     date: int
+    """
+    metadata=config(
+            encoder= date.isoformat,
+            decoder= date.fromisoformat,
+            mm_field= fields.DateTime(format='iso')
+        ))
+    """
     chat: Chat
     forward_from: Optional[User] = None
     forward_from_chat: Optional[Chat] = None
@@ -165,7 +172,7 @@ class Message:
 @dataclass
 class CallbackQuery:
     callback_query_id: str = field(metadata=config(field_name='id'))
-    from_user: str = field(metadata=config(field_name='from'))
+    from_user: User = field(metadata=config(field_name='from'))
     chat_instance: str
     data: Optional[str] = None
     game_short_name: Optional[str] = None
