@@ -27,48 +27,75 @@ class TelegramApiException(TelegramBotException):
 
 ChatId = Union[int, str]
 ReplyMarkup = Optional[Union[InlineKeyboardMarkup, ReplyKeyboardMarkup]]
-MessageHandler = Callable[[Message], None]
-CallbackQueryHandler = Callable[[CallbackQuery], None]
+MessageHandlerFunc = Callable[['Bot', Message], None]
+CallbackQueryHandlerFunc = Callable[['Bot', CallbackQuery], None]
 
 
 T = TypeVar('T')
 
 
 class Handler(Generic[T], ABC):
+    def __init__(self, handler_func: Callable[['Bot', T], None], **kwargs: Any):
+        self.__handler_func = handler_func
+
     @abstractmethod
-    def handle(self, obj: T) -> bool:
-        """Returns True if an object was successfully handled"""
-        pass
+    def should_handle(self, obj: T) -> bool:
+        """Returns True if an object should be handled by this handler"""
+
+    def handle(self, bot_instance: 'Bot', obj: T) -> None:
+        self.__handler_func(bot_instance, obj)
 
 
-class _MessageHandler(Handler[Message]):
-    def __init__(self, handler_func: MessageHandler, commands: Optional[List[str]] = None) -> None:
+class MessageHandler(Handler[Message]):
+    def __init__(self, handler_func: MessageHandlerFunc, commands: Optional[List[str]] = None) -> None:
+        super().__init__(handler_func)
         self.__handler_func = handler_func
         self.__commands = commands
 
-    def handle(self, message: Message) -> bool:
-        if not self.__commands or not message.text or any(message.text.startswith(f'/{command}') for command in self.__commands):
-            self.__handler_func(message)
-            return True
-        return False
+    def should_handle(self, message: Message) -> bool:
+        return (
+            not self.__commands or
+            not message.text or
+            any(message.text.startswith(f'/{command}') for command in self.__commands)
+        )
 
 
-class _CallbackQueryHandler(Handler[CallbackQuery]):
-    def __init__(self, handler_func: CallbackQueryHandler, callback_query_data: Optional[List[str]] = None) -> None:
+def message_handler(commands: Optional[List[str]] = None) -> Callable[[MessageHandlerFunc], MessageHandler]:
+    def wrapper(handler_func: MessageHandlerFunc) -> MessageHandler:
+        return MessageHandler(handler_func, commands=commands)
+    return wrapper
+
+
+class CallbackQueryHandler(Handler[CallbackQuery]):
+    def __init__(self, handler_func: CallbackQueryHandlerFunc, callback_query_data: Optional[List[str]] = None) -> None:
+        super().__init__(handler_func)
         self.__handler_func = handler_func
         self.__callback_query_data = callback_query_data
 
-    def handle(self, callback_query: CallbackQuery) -> bool:
-        if (
-                not self.__callback_query_data or
-                any(callback_query.data and callback_query.data.startswith(cqd) for cqd in self.__callback_query_data)
-        ):
-            self.__handler_func(callback_query)
-            return True
-        return False
+    def should_handle(self, callback_query: CallbackQuery) -> bool:
+        return (
+            not self.__callback_query_data or
+            not callback_query.data or
+            any(callback_query.data and callback_query.data.startswith(cqd) for cqd in self.__callback_query_data)
+        )
 
 
-class Bot:
+class BotMeta(type):
+    def __new__(mcs, name, bases, attrs):
+        message_handlers = attrs['_message_handlers'] = list()
+
+        # inherit bases handlers
+        for base in bases:
+            message_handlers.extend(getattr(base, '_message_handlers'))
+
+        for attr in attrs.values():
+            if isinstance(attr, MessageHandler):
+                message_handlers.append(attr)
+
+        return type.__new__(mcs, name, bases, attrs)
+
+
+class Bot(metaclass=BotMeta):
     def __init__(
         self,
         token: str
@@ -76,20 +103,16 @@ class Bot:
         self.token = token
         self.url = 'https://api.telegram.org/bot' + token + '/'
         self.last_update_id = None
-        self.message_handlers: List[Handler[Message]] = []
-        self.callback_query_handlers: List[Handler[CallbackQuery]] = []
 
-    def message_handler(self, commands: Optional[List[str]] = None) -> Callable[[MessageHandler], MessageHandler]:
-        def message_handler_decorator(message_handler: MessageHandler) -> MessageHandler:
-            self.message_handlers.append(_MessageHandler(handler_func=message_handler, commands=commands))
-            return message_handler
-        return message_handler_decorator
+    @property
+    def message_handlers(self) -> List[Handler[Message]]:
+        """This message_handlers property is initialized by metaclass"""
+        return getattr(self, '_message_handlers')
 
-    def callback_query_handler(self) -> Callable[[CallbackQueryHandler], CallbackQueryHandler]:
-        def callback_query_handler_decorator(callback_query_handler: CallbackQueryHandler) -> CallbackQueryHandler:
-            self.callback_query_handlers.append(_CallbackQueryHandler(handler_func=callback_query_handler))
-            return callback_query_handler
-        return callback_query_handler_decorator
+    @property
+    def callback_query_handlers(self) -> List[Handler[CallbackQuery]]:
+        """This callback_query_handlers property is initialized by metaclass"""
+        return getattr(self, '_callback_query_handlers')
 
     def long_polling(self, timeout: int = 30) -> None:
         while 1 == 1:
@@ -110,7 +133,9 @@ class Bot:
     def handle_message(self, message: Message) -> None:
         message_was_handled = False
         for handler in self.message_handlers:
-            message_was_handled = handler.handle(message) or message_was_handled
+            if handler.should_handle(message):
+                handler.handle(self, message)
+                message_was_handled = True
         if not message_was_handled:
             raise TelegramBotException(
                 f'Message {Message} was not handled because no suitable message handler was provided.'
@@ -119,7 +144,9 @@ class Bot:
     def handle_callback_query(self, callback_query: CallbackQuery) -> None:
         callback_query_was_handled = False
         for handler in self.callback_query_handlers:
-            callback_query_was_handled = handler.handle(callback_query) or callback_query_was_handled
+            if handler.should_handle(callback_query):
+                handler.handle(self, callback_query)
+                callback_query_was_handled = True
         if not callback_query_was_handled:
             raise TelegramBotException(
                 f'Callback query {CallbackQuery} was not handled'
@@ -190,7 +217,7 @@ class Bot:
         }
         result = self._make_request('getUpdates', params=params)
         if len(result) > 0:
-            updates = Update.schema().load(result, many=True)  # TypeError: the JSON object must be str, bytes or bytearray, not list
+            updates = Update.schema().load(result, many=True)
             self.last_update_id = updates[-1].update_id
             return updates
 
