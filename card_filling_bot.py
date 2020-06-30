@@ -6,8 +6,8 @@ import sys
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from telegramapi.bot import Bot
-from telegramapi.types import Message, ParseMode
+from telegramapi.bot import Bot, message_handler, callback_query_handler
+from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
 
@@ -15,9 +15,6 @@ from config import test_token, mysql_user, mysql_password, mysql_host, mysql_dat
 FORMAT = '%(asctime)-15s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 log = logging.getLogger(__name__)
-
-
-bot = Bot(token=test_token)
 
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
 engine = create_engine(SQLALCHEMY_DATABASE_URI)
@@ -89,91 +86,106 @@ def find_numbers(text: str) -> List[float]:
     return re.findall(numbers_regexp, text)
 
 
-@bot.message_handler()
-def add_new_fill(message: Message) -> None:
-    if message.text:
-        numbers = list(find_numbers(message.text))
-        if numbers:
-            if len(numbers) > 1:
-                bot.send_message(
+class CardFillingBot(Bot):
+    @message_handler()
+    def add_new_fill(self, message: Message) -> None:
+        if message.text:
+            numbers = list(find_numbers(message.text))
+            months = find_months(message.text)
+            if numbers:
+                if len(numbers) > 1:
+                    self.send_message(
+                        chat_id=message.chat.chat_id,
+                        text='Отправьте суммы пополнения по одной в каждом сообщении.'
+                    )
+                else:
+                    db_session = Session()
+                    try:
+                        card_fill = CardFill(
+                            user_id=message.from_user.user_id,
+                            fill_date=datetime.fromtimestamp(message.date),
+                            amount=float(numbers[0])
+                        )
+                        db_session.add(card_fill)
+                        db_session.commit()
+                        self.send_message(
+                            chat_id=message.chat.chat_id,
+                            text=f'Принято {numbers[0]}р. от @{message.from_user.username}.'
+                        )
+                    except Exception:
+                        self.send_message(
+                            chat_id=message.chat.chat_id,
+                            text='Ошибка добавления суммы пополнения. Попробуйте еще раз позже.'
+                        )
+                        raise
+                    finally:
+                        Session.remove()
+            elif months:
+                my = InlineKeyboardButton(text='Мои пополнения', callback_data='my')
+                stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data='stat')
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat]])
+                self.send_message(
                     chat_id=message.chat.chat_id,
-                    text='Отправьте суммы пополнения по одной в каждом сообщении.'
+                    text=f'Выбраны месяцы: {", ".join(map(months_names.get, months))}. Какая информация интересует?',
+                    reply_markup=keyboard
                 )
-            else:
-                db_session = Session()
-                try:
-                    card_fill = CardFill(
-                        user_id=message.from_user.user_id,
-                        fill_date=datetime.fromtimestamp(message.date),
-                        amount=float(numbers[0])
-                    )
-                    db_session.add(card_fill)
-                    db_session.commit()
-                    bot.send_message(
-                        chat_id=message.chat.chat_id,
-                        text=f'Принято {numbers[0]}р. от @{message.from_user.username}.'
-                    )
-                except Exception:
-                    bot.send_message(
-                        chat_id=message.chat.chat_id,
-                        text='Ошибка добавления суммы пополнения. Попробуйте еще раз позже.'
-                    )
-                    raise
-                finally:
-                    Session.remove()
 
-
-@bot.message_handler(commands=['my'])
-def my_fills(message: Message) -> None:
-    db_session = Session()
-    try:
-        from_user = db_session.query(TelegramUser).get(message.from_user.user_id)
-        if not from_user:
-            print(f'Adding unknown user {message.from_user}')
-            tg_user = TelegramUser(
-                user_id=message.from_user.user_id,
-                is_bot=message.from_user.is_bot,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name,
-                username=message.from_user.username,
-                language_code=message.from_user.language_code
-            )
-            db_session.add(tg_user)
-            db_session.commit()
-        reply = (
-            f'Пополнения @{from_user.username}:\n' +
-            '\n'.join([f'{fill.fill_date}: {fill.amount}' for fill in from_user.card_fills])
-        )
-        bot.send_message(chat_id=message.chat.chat_id, text=reply)
-    finally:
-        Session.remove()
-
-
-@bot.message_handler(commands=['stat'])
-def per_month(message: Message) -> None:
-    months = find_months(message.text)
-    if len(months) == 0:
-        bot.send_message(
-            chat_id=message.chat.chat_id,
-            text='Укажите месяц или месяцы после команды, например "/stat январь февраль".'
-        )
-    else:
+    @callback_query_handler(accepted_data=['my'])
+    def my_fills(self, callback_query: CallbackQuery) -> None:
+        chat_id = callback_query.message.chat.chat_id
         db_session = Session()
         try:
-            message_text = ''
-            for month in months:
-                message_text = message_text + f'*{months_names[month]}:*\n'
-                res = db_session.execute(
-                    f'select username, amount from monthly_report where month_num = {month.value}'
-                ).fetchall()
-                if len(res) == 0:
-                    message_text = message_text + 'Не было пополнений.\n\n'
-                else:
-                    message_text = message_text + '\n'.join(f'@{row[0]}: {row[1]}' for row in res) + '\n\n'
-            message_text = message_text.replace('_', '\\_').replace('.', '\\.')
-            bot.send_message(chat_id=message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
+            from_user = db_session.query(TelegramUser).get(callback_query.from_user.user_id)
+            if not from_user:
+                print(f'Adding unknown user {callback_query.from_user}')
+                tg_user = TelegramUser(
+                    user_id=callback_query.from_user.user_id,
+                    is_bot=callback_query.from_user.is_bot,
+                    first_name=callback_query.from_user.first_name,
+                    last_name=callback_query.from_user.last_name,
+                    username=callback_query.from_user.username,
+                    language_code=callback_query.from_user.language_code
+                )
+                db_session.add(tg_user)
+                db_session.commit()
+            reply = (
+                f'Пополнения @{from_user.username}:\n' +
+                '\n'.join([f'{fill.fill_date}: {fill.amount}' for fill in from_user.card_fills])
+            )
+            self.send_message(chat_id=chat_id, text=reply)
         finally:
             Session.remove()
+
+    @callback_query_handler(accepted_data=['stat'])
+    def per_month(self, callback_query: CallbackQuery) -> None:
+        message_text = callback_query.message.text
+        chat_id = callback_query.message.chat.chat_id
+        months = find_months(message_text)
+        if len(months) == 0:
+            self.send_message(
+                chat_id=chat_id,
+                text='Укажите месяц или месяцы после команды, например "/stat январь февраль".'
+            )
+        else:
+            db_session = Session()
+            try:
+                message_text = ''
+                for month in months:
+                    message_text = message_text + f'*{months_names[month]}:*\n'
+                    res = db_session.execute(
+                        f'select username, amount from monthly_report where month_num = {month.value}'
+                    ).fetchall()
+                    if len(res) == 0:
+                        message_text = message_text + 'Не было пополнений.\n\n'
+                    else:
+                        message_text = message_text + '\n'.join(f'@{row[0]}: {row[1]}' for row in res) + '\n\n'
+                message_text = message_text.replace('_', '\\_').replace('.', '\\.')
+                self.send_message(chat_id=chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
+            finally:
+                Session.remove()
+
+
+bot = CardFillingBot(token=test_token)
 
 
 try:
