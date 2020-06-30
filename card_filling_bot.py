@@ -4,12 +4,12 @@ import re
 import logging
 import sys
 from datetime import datetime
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, extract
 from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
-from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
+from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database, yet_another_testing_token
 
 
 FORMAT = '%(asctime)-15s %(message)s'
@@ -132,6 +132,9 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['my'])
     def my_fills(self, callback_query: CallbackQuery) -> None:
+        months = find_months(callback_query.message.text)
+        m_values = [month.value for month in months]
+        m_names = ', '.join(map(months_names.get, months))
         chat_id = callback_query.message.chat.chat_id
         db_session = Session()
         try:
@@ -148,11 +151,16 @@ class CardFillingBot(Bot):
                 )
                 db_session.add(tg_user)
                 db_session.commit()
-            reply = (
-                f'Пополнения @{from_user.username}:\n' +
-                '\n'.join([f'{fill.fill_date}: {fill.amount}' for fill in from_user.card_fills])
-            )
-            self.send_message(chat_id=chat_id, text=reply)
+            print([cf.fill_date.month for cf in from_user.card_fills])
+            filtered_fills = list(filter(lambda cf: cf.fill_date.month in m_values, from_user.card_fills))
+            if len(filtered_fills) == 0:
+                text = f'Не было пополнений в {m_names}.'
+            else:
+                text = (
+                    f'Пополнения @{from_user.username} за {m_names}:\n' +
+                    '\n'.join([f'{fill.fill_date}: {fill.amount}' for fill in filtered_fills])
+                )
+            self.send_message(chat_id=chat_id, text=text)
         finally:
             Session.remove()
 
@@ -185,7 +193,7 @@ class CardFillingBot(Bot):
                 Session.remove()
 
 
-bot = CardFillingBot(token=test_token)
+bot = CardFillingBot(token=yet_another_testing_token)
 
 
 try:
