@@ -3,13 +3,14 @@ from enum import Enum
 import re
 import logging
 import sys
+import time
 from datetime import datetime
 from sqlalchemy import create_engine, extract
 from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
-from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database, yet_another_testing_token
+from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
 
 
 FORMAT = '%(asctime)-15s %(message)s'
@@ -17,7 +18,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 log = logging.getLogger(__name__)
 
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
-engine = create_engine(SQLALCHEMY_DATABASE_URI)
+engine = create_engine(SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
 Session = scoped_session(sessionmaker(bind=engine))
 
 
@@ -193,11 +194,11 @@ class CardFillingBot(Bot):
                 Session.remove()
 
 
-bot = CardFillingBot(token=yet_another_testing_token)
+bot = CardFillingBot(token=test_token)
 
-
-try:
-    bot.long_polling()
-except Exception as e:
-    log.error(e, exc_info=True)
-    raise
+while 1 == 1:
+    try:
+        bot.long_polling()
+    except Exception:
+        log.error('Error', exc_info=True)
+        time.sleep(30)
