@@ -63,7 +63,7 @@ months_names = {
     Month.july: 'Июль',
     Month.august: 'Август',
     Month.september: 'Сентябрь',
-    Month.october: 'Октабрь',
+    Month.october: 'Октябрь',
     Month.november: 'Ноябрь',
     Month.december: 'Декабрь'
 }
