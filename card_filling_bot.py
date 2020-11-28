@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 from datetime import datetime
-from sqlalchemy import create_engine, extract
+from sqlalchemy import create_engine, extract, func
 from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
@@ -124,7 +124,8 @@ class CardFillingBot(Bot):
             elif months:
                 my = InlineKeyboardButton(text='Мои пополнения', callback_data='my')
                 stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data='stat')
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat]])
+                total = InlineKeyboardButton(text='Сумма всех пополнений', callback_data='total')
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [total]])
                 self.send_message(
                     chat_id=message.chat.chat_id,
                     text=f'Выбраны месяцы: {", ".join(map(months_names.get, months))}. Какая информация интересует?',
@@ -173,7 +174,7 @@ class CardFillingBot(Bot):
         if len(months) == 0:
             self.send_message(
                 chat_id=chat_id,
-                text='Укажите месяц или месяцы после команды, например "/stat январь февраль".'
+                text='Не выбраны месяцы.'
             )
         else:
             db_session = Session()
@@ -193,6 +194,19 @@ class CardFillingBot(Bot):
             finally:
                 Session.remove()
 
+    @callback_query_handler(accepted_data=['total'])
+    def total(self, callback_query: CallbackQuery) -> None:
+        db_session = Session()
+        try:
+            query = db_session.query(
+                TelegramUser.username,
+                func.sum(CardFill.amount).label('total_amount')
+            ).join(CardFill).group_by(TelegramUser.username)
+            results = db_session.execute(query)
+            message_text = '\n'.join(f'@{row[0]}: {row[1]}' for row in results)
+            self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
+        finally:
+            Session.remove()
 
 bot = CardFillingBot(token=test_token)
 
