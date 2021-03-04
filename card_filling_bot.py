@@ -154,7 +154,7 @@ class CardFillingBot(Bot):
                 db_session.add(tg_user)
                 db_session.commit()
             print([cf.fill_date.month for cf in from_user.card_fills])
-            filtered_fills = list(filter(lambda cf: cf.fill_date.month in m_values, from_user.card_fills))
+            filtered_fills = list(filter(lambda cf: cf.fill_date.month in m_values and cf.fill_date.year == datetime.now().year, from_user.card_fills))
             if len(filtered_fills) == 0:
                 text = f'Не было пополнений в {m_names}.'
             else:
@@ -183,7 +183,7 @@ class CardFillingBot(Bot):
                 for month in months:
                     message_text = message_text + f'*{months_names[month]}:*\n'
                     res = db_session.execute(
-                        f'select username, amount from monthly_report where month_num = {month.value}'
+                        f'select username, amount from monthly_report where month_num = {month.value} and fill_year = {datetime.now().year}'
                     ).fetchall()
                     if len(res) == 0:
                         message_text = message_text + 'Не было пополнений.\n\n'
