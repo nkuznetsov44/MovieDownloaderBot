@@ -4,3 +4,7 @@ venv/
 config.py
 *log.txt
 *Thumbs.db
+bin/
+lib/
+share/
+pyvenv.cfg
