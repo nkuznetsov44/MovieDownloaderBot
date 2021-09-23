@@ -11,11 +11,14 @@ from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
+from systemd import journal
 
 
 FORMAT = '%(asctime)-15s %(message)s'
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+# logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 log = logging.getLogger(__name__)
+log.addHandler(journal.JournaldLogHandler())
+log.setLevel(logging.INFO)
 
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
 engine = create_engine(SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
@@ -212,6 +215,7 @@ bot = CardFillingBot(token=test_token)
 
 while 1 == 1:
     try:
+        log.info('Starting card filling bot...')
         bot.long_polling()
     except Exception:
         log.error('Error', exc_info=True)

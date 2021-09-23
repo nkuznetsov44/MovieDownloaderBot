@@ -14,3 +14,5 @@ stringcase==1.2.0
 typing-extensions==3.7.4.2
 typing-inspect==0.6.0
 urllib3==1.25.9
+systemd==0.16.1
+
