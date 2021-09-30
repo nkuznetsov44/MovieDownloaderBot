@@ -14,6 +14,9 @@ from config import test_token, mysql_user, mysql_password, mysql_host, mysql_dat
 from flask import Flask, request
 
 
+NEED_RESET_WEBHOOK = False
+
+
 FORMAT = '%(asctime)-15s %(message)s'
 #logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 logging.basicConfig(filename='card_filling_bot.log', filemode='a', format=FORMAT, level=logging.INFO)
@@ -214,9 +217,14 @@ class CardFillingBot(Bot):
 
 bot = CardFillingBot(token=test_token)
 
-webhook_info = bot.webhook_info()
+webhook_info = bot.get_webhook_info()
 log.info(webhook_info)
-if not webhook_info.url:
+
+need_reset_webhook = NEED_RESET_WEBHOOK or not webhook_info.url
+
+if need_reset_webhook:
+    if webhook_info.url:
+        bot.delete_webhook()
     bot.set_webhook(url=webhook_url)
 
 
