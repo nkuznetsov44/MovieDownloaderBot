@@ -19,7 +19,6 @@ requests==2.24.0
 soupsieve==2.0.1
 SQLAlchemy==1.3.18
 stringcase==1.2.0
-systemd==0.16.1
 typing-extensions==3.7.4.2
 typing-inspect==0.6.0
 urllib3==1.25.9

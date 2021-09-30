@@ -17,12 +17,6 @@ from flask import Flask, request
 NEED_RESET_WEBHOOK = False
 
 
-FORMAT = '%(asctime)-15s %(message)s'
-#logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
-logging.basicConfig(filename='card_filling_bot.log', filemode='a', format=FORMAT, level=logging.INFO)
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
-
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
 engine = create_engine(SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
 Session = scoped_session(sessionmaker(bind=engine))
@@ -215,10 +209,34 @@ class CardFillingBot(Bot):
             Session.remove()
 
 
+app = Flask(__name__)
+
+
+if __name__ != '__main__':
+    gunicorn_logger = logging.getLogger('gunicorn.error')
+    app.logger.handlers = gunicorn_logger.handlers
+    app.logger.setLevel(logging.INFO)
+
+
+@app.route('/cardFillingBot', methods=['POST'])
+def receive_update():
+    try:
+        update = request.get_json()
+        app.logger.info(f'Got update {update}')
+        bot.handle_update_raw(update)
+        return 'ok'
+    except Exception:
+        if update:
+            app.logger.exception(f'Exception in processing update {update}')
+        else:
+            app.logger.exception('Unexpected error')
+        return 'not ok'
+
+
 bot = CardFillingBot(token=test_token)
 
 webhook_info = bot.get_webhook_info()
-log.info(webhook_info)
+app.logger.info(webhook_info)
 
 need_reset_webhook = NEED_RESET_WEBHOOK or not webhook_info.url
 
@@ -226,21 +244,3 @@ if need_reset_webhook:
     if webhook_info.url:
         bot.delete_webhook()
     bot.set_webhook(url=webhook_url)
-
-
-app = Flask(__name__)
-
-
-@app.route('/cardFillingBot', methods=['POST'])
-def receive_update():
-    try:
-        update = request.get_json()
-        log.info(f'Got update {update}')
-        bot.handle_update_raw(update)
-        return 'ok'
-    except Exception:
-        if update:
-            log.exception(f'Exception in processing update {update}')
-        else:
-            log.exception('Unexpected error')
-        return 'not ok'
