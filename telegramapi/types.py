@@ -200,9 +200,9 @@ class Update:
 @dataclass_json(undefined=Undefined.EXCLUDE)
 @dataclass
 class WebhookInfo:
-    url: Optional[str] = None
     has_custom_certificate: bool
     pending_update_count: int
+    url: Optional[str] = None
     ip_address: Optional[str]
     last_error_date: Optional[int]
     last_error_message: Optional[str]
