@@ -15,7 +15,8 @@ from flask import Flask, request
 
 
 FORMAT = '%(asctime)-15s %(message)s'
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+#logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+logging.basicConfig(filename='card_filling_bot.log', filemode='a', format=FORMAT, level=logging.INFO)
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
@@ -226,6 +227,7 @@ app = Flask(__name__)
 def receive_update():
     try:
         update = request.get_json()
+        log.info(f'Got update {update}')
         bot.handle_update_raw(update)
         return 'ok'
     except Exception:
