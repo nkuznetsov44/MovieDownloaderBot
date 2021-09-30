@@ -195,3 +195,16 @@ class Update:
     # pre_checkout_query: Optional[PreCheckoutQuery] = None
     # poll: Optional[Poll] = None
     # poll_answer: Optional[PollAnswer] = None
+
+
+@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass
+class WebhookInfo:
+    url: Optional[str] = None
+    has_custom_certificate: bool
+    pending_update_count: int
+    ip_address: Optional[str]
+    last_error_date: Optional[int]
+    last_error_message: Optional[str]
+    max_connections: Optional[int]
+    allowed_updates: Optional[List[str]]

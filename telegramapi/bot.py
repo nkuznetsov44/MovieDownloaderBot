@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
 from abc import ABC, abstractmethod
 import json
 import requests
-from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
+from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode, WebhookInfo
 
 
 class TelegramBotException(Exception):
@@ -132,6 +132,10 @@ class Bot(metaclass=BotMeta):
             updates = self.get_updates(offset=offset, timeout=timeout)
             if updates:
                 self.handle_updates(updates)
+
+    def webhook_info(self):
+        response = self._make_request('getWebhookInfo')
+        return WebhookInfo.schema().load(response, many=False)
 
     def set_webhook(
         self,

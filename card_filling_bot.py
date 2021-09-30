@@ -212,7 +212,11 @@ class CardFillingBot(Bot):
 
 
 bot = CardFillingBot(token=test_token)
-bot.set_webhook(url=webhook_url)
+
+webhook_info = bot.webhook_info()
+log.info(webhook_info)
+if not webhook_info.url:
+    bot.set_webhook(url=webhook_url)
 
 
 app = Flask(__name__)
