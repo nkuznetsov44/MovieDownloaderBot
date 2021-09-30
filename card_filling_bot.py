@@ -11,14 +11,12 @@ from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
-from systemd import journal
 from flask import Flask, request
 
 
 FORMAT = '%(asctime)-15s %(message)s'
-# logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=FORMAT)
 log = logging.getLogger(__name__)
-log.addHandler(journal.JournaldLogHandler())
 log.setLevel(logging.INFO)
 
 SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}/{mysql_database}'
@@ -217,13 +215,18 @@ bot = CardFillingBot(token=test_token)
 app = Flask(__name__)
 
 
-@app.route('/', methods=['POST'])
+@app.route('/cardFillingBot', methods=['GET', 'POST'])
 def receive_update():
+    if request.method == 'GET':
+        return 'ok'
     try:
         update = request.get_json()
         bot.handle_update_raw(update)
+        return 'ok'
     except Exception:
         if update:
             log.exception(f'Exception in processing update {update}')
         else:
             log.exception('Unexpected error')
+        return 'not ok'
+
