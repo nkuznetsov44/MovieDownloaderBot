@@ -203,8 +203,8 @@ class WebhookInfo:
     has_custom_certificate: bool
     pending_update_count: int
     url: Optional[str] = None
-    ip_address: Optional[str]
-    last_error_date: Optional[int]
-    last_error_message: Optional[str]
-    max_connections: Optional[int]
-    allowed_updates: Optional[List[str]]
+    ip_address: Optional[str] = None
+    last_error_date: Optional[int] = None
+    last_error_message: Optional[str] = None
+    max_connections: Optional[int] = None
+    allowed_updates: Optional[List[str]] = None
