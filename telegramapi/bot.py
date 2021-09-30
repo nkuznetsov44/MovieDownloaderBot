@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
 from abc import ABC, abstractmethod
 import json
 import requests
-from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
+from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode, InputFile
 
 
 class TelegramBotException(Exception):
@@ -133,6 +133,29 @@ class Bot(metaclass=BotMeta):
             if updates:
                 self.handle_updates(updates)
 
+    def set_webhook(
+        self,
+        url: str,
+        certificate: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+        max_connections: Optional[int] = None,
+        allowed_updates: Optional[List[str]] = None,
+        drop_pending_updates: Optional[bool] = None
+    ):
+        files = None
+        if certificate:
+            files = {'certificate': certificate}
+        params = {
+            'url': url,
+            'ip_address': ip_address,
+            'max_connections': max_connections,
+            'allowed_updates': allowed_updates,
+            'drop_pending_updates': drop_pending_updates
+        }
+        response = self._make_request('setWebhook', params=params)
+        if not response == True:
+            raise TelegramApiException(f'Failed to set webhook {response}')
+
     def handle_updates(self, updates: List[Update]) -> None:
         for update in updates:
             if update.message:
@@ -203,12 +226,13 @@ class Bot(metaclass=BotMeta):
         self,
         api_method: str,
         http_method: Optional[str] = 'get',
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        files: Optional[Dice[str, Any]] = None
     ) -> Any:
         if http_method == 'get':
-            response = requests.get(self.url + api_method, params=params)
+            response = requests.get(self.url + api_method, params=params, files=files)
         elif http_method == 'post':
-            response = requests.post(self.url + api_method, data=params)
+            response = requests.post(self.url + api_method, data=params, files=files)
         else:
             raise TelegramApiException(f'Unsupported http method {http_method}')
         return self._check_response(response)

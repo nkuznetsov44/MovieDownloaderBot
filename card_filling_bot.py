@@ -10,7 +10,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from model import TelegramUser, CardFill
-from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
+from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database, webhook_url
 from flask import Flask, request
 
 
@@ -212,13 +212,14 @@ class CardFillingBot(Bot):
 
 
 bot = CardFillingBot(token=test_token)
+bot.set_webhook(url=webhook_url)
+
+
 app = Flask(__name__)
 
 
-@app.route('/cardFillingBot', methods=['GET', 'POST'])
+@app.route('/cardFillingBot', methods=['POST'])
 def receive_update():
-    if request.method == 'GET':
-        return 'ok'
     try:
         update = request.get_json()
         bot.handle_update_raw(update)
@@ -229,4 +230,3 @@ def receive_update():
         else:
             log.exception('Unexpected error')
         return 'not ok'
-
