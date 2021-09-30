@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Union, Callable, TypeVar, Generic
 from abc import ABC, abstractmethod
 import json
 import requests
-from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode, InputFile
+from telegramapi.types import Update, Message, User, CallbackQuery, InlineKeyboardMarkup, ReplyKeyboardMarkup, ParseMode
 
 
 class TelegramBotException(Exception):
@@ -227,7 +227,7 @@ class Bot(metaclass=BotMeta):
         api_method: str,
         http_method: Optional[str] = 'get',
         params: Optional[Dict[str, Any]] = None,
-        files: Optional[Dice[str, Any]] = None
+        files: Optional[Dict[str, Any]] = None
     ) -> Any:
         if http_method == 'get':
             response = requests.get(self.url + api_method, params=params, files=files)
