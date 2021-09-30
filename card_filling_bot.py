@@ -12,6 +12,7 @@ from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, Inli
 from model import TelegramUser, CardFill
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database
 from systemd import journal
+from flask import Flask, request
 
 
 FORMAT = '%(asctime)-15s %(message)s'
@@ -211,12 +212,18 @@ class CardFillingBot(Bot):
         finally:
             Session.remove()
 
-bot = CardFillingBot(token=test_token)
 
-while 1 == 1:
+bot = CardFillingBot(token=test_token)
+app = Flask(__name__)
+
+
+@app.route('/', methods=['POST'])
+def receive_update():
     try:
-        log.info('Starting card filling bot...')
-        bot.long_polling()
+        update = request.get_json()
+        bot.handle_update_raw(update)
     except Exception:
-        log.error('Error', exc_info=True)
-        time.sleep(30)
+        if update:
+            log.exception(f'Exception in processing update {update}')
+        else:
+            log.exception('Unexpected error')

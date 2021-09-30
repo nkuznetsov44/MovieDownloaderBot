@@ -140,6 +140,10 @@ class Bot(metaclass=BotMeta):
             elif update.callback_query:
                 self.handle_callback_query(update.callback_query)
 
+    def handle_update_raw(self, update_raw: Dict[str, Any]) -> None:
+        update = Update.schema().load(update_raw, many=False)
+        self.handle_updates([update])
+
     def handle_message(self, message: Message) -> None:
         message_was_handled = False
         for handler in self.message_handlers:
