@@ -206,13 +206,13 @@ class CardFillingBot(Bot):
     def _reply_to_my_fills_request(self, callback_query: CallbackQuery, months: List[Month], fills: List[CardFill]) -> None:
         m_names = ', '.join(map(months_names.get, months))
         if len(fills) == 0:
-                text = f'Не было пополнений в {m_names}.'
-            else:
-                text = (
-                    f'Пополнения @{from_user.username} за {m_names}:\n' +
-                    '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description}' for fill in filtered_fills])
-                )
-            self.send_message(chat_id=callback_query.message.chat.chat_id, text=text)
+            text = f'Не было пополнений в {m_names}.'
+        else:
+            text = (
+                f'Пополнения @{from_user.username} за {m_names}:\n' +
+                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description}' for fill in filtered_fills])
+            )
+        self.send_message(chat_id=callback_query.message.chat.chat_id, text=text)
 
     def _create_new_user(self, telegramapi_user: TelegramApiUser, db_session: Any) -> TelegramUser:
         self.logger.info(f'Creating new user {telegramapi_user}')
