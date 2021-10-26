@@ -99,7 +99,7 @@ class CardFillingBot(Bot):
         self._settings = settings
         self.logger = settings.logger
         self._db_engine = create_engine(self._SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
-        self.DbSession = scoped_session(sessionmaker(bind=engine))
+        self.DbSession = scoped_session(sessionmaker(bind=self._db_engine))
         self._numbers_regexp = re.compile(r'[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?')
 
     @property

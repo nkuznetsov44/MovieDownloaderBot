@@ -1,6 +1,6 @@
 __pycache__/
 .idea/
-venv/
+*env/
 config.py
 *log.txt
 *Thumbs.db
