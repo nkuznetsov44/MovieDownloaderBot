@@ -30,6 +30,7 @@ if __name__ == '__main__':
             log.error('Error', exc_info=True)
             time.sleep(30)"""
 
+import logging
 from flask import Flask, request
 from card_filling_bot import CardFillingBot, CardFillingBotSettings
 from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database, webhook_url
