@@ -1,4 +1,4 @@
-from typing import List, Any, Optional
+from typing import List, Dict, Any, Optional
 from enum import Enum
 import re
 from datetime import datetime
