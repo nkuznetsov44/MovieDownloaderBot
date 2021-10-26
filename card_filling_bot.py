@@ -186,7 +186,7 @@ class CardFillingBot(Bot):
                         user_id=message.from_user.user_id,
                         fill_date=datetime.fromtimestamp(message.date),
                         amount=float(fill.amount),
-                        description=
+                        description=fill.description
                     )
                     db_session.add(card_fill)
                     db_session.commit()
