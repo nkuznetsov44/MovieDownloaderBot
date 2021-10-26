@@ -95,7 +95,7 @@ class CardFillingBotSettings:
 
 class CardFillingBot(Bot):
     def __init__(self, token: str, settings: CardFillingBotSettings) -> None:
-        super().__init__()
+        super().__init__(token)
         self._settings = settings
         self.logger = settings.logger
         self._db_engine = create_engine(self._SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
