@@ -14,12 +14,14 @@ class CardFill(Base):
     user = relationship("TelegramUser", back_populates="card_fills")
     fill_date = Column('fill_date', DateTime)
     amount = Column('amount', Float)
+    description = Column('description', String, nullable=True)
 
     def __repr__(self) -> str:
         return (
             f'{super().__repr__()}: '
-            f'{{"fill_id": {self.fill_id}, "user": {self.user}, '
-            f'"fill_date": {self.fill_date}, "amount": {self.amount}}}'
+            f'<"fill_id": {self.fill_id}, "user": {self.user}, '
+            f'"fill_date": {self.fill_date}, "amount": {self.amount}, '
+            f'"description": {self.description}>'
         )
 
 
@@ -37,5 +39,5 @@ class TelegramUser(Base):
     def __repr__(self) -> str:
         return (
             f'{super().__repr__()}: '
-            f'{{"user_id": {self.user_id}, "username": {self.username}}}'
+            f'<"user_id": {self.user_id}, "username": {self.username}>'
         )
