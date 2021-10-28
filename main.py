@@ -82,3 +82,4 @@ def receive_update():
         else:
             app.logger.exception('Unexpected error')
         return 'not ok'
+

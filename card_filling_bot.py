@@ -92,12 +92,24 @@ class CardFillingBotSettings:
     def logger(self) -> Any:
         return self._logger
 
+@dataclass
+class UserSumOverPeriodDto:
+    username: str
+    amount: float
+
+
+@dataclass
+class FillDto:
+    amount: str
+    description: Optional[str]
+
 
 class CardFillingBot(Bot):
     def __init__(self, token: str, settings: CardFillingBotSettings) -> None:
         super().__init__(token)
         self._settings = settings
         self.logger = settings.logger
+        self.logger.info(f'Creating database engine {settings.mysql_database}@{settings.mysql_host} as {settings.mysql_user}')
         self._db_engine = create_engine(self._SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
         self.DbSession = scoped_session(sessionmaker(bind=self._db_engine))
         self._numbers_regexp = re.compile(r'[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?')
@@ -106,22 +118,14 @@ class CardFillingBot(Bot):
     def _SQLALCHEMY_DATABASE_URI(self) -> str:
         return f'mysql+pymysql://{self._settings.mysql_user}:{self._settings.mysql_password}@{self._settings.mysql_host}/{self._settings.mysql_database}'
 
-    def _get_db_session(self) -> Any:
-        return self._session_factory()
-
-    @dataclass
-    class FillDto:
-        amount: str
-        description: Optional[str]
-
     def _try_parse_fill_message_text(self, message_text: str) -> Optional[FillDto]:
         """Returns FillDto on successful parse or None if no fill was found."""
         cnt = 0
         for number_match in re.finditer(self._numbers_regexp, message_text):
             cnt += 1
             amount = number_match.group()
-            before_phrase = message[:number_match.start()].strip()
-            after_phrase = message[number_match.end():].strip()
+            before_phrase = message_text[:number_match.start()].strip()
+            after_phrase = message_text[number_match.end():].strip()
             if len(before_phrase) > 0 and len(after_phrase) > 0:
                 description = ' '.join([before_phrase, after_phrase])
             else:
@@ -134,8 +138,8 @@ class CardFillingBot(Bot):
     def _try_parse_months_message_text(self, message_text: str) -> List[Month]:
         """Returns list of months on successful parse or empty list if no months were found."""
         results: List[Month] = []
-        if text:
-            for word in text.split(' '):
+        if message_text:
+            for word in message_text.split(' '):
                 for month, month_re in months_regexps.items():
                     result = re.search(month_re, word, re.IGNORECASE)
                     if result:
@@ -145,7 +149,7 @@ class CardFillingBot(Bot):
     def _reply_to_fill_message(self, message: Message, fill: FillDto) -> None:
         reply_text = f'Принято {fill.amount}р. от @{message.from_user.username}'
         if fill.description:
-            reply_text += f': {description}.'
+            reply_text += f': {fill.description}.'
         else:
             reply_text += '.'
         self.send_message(
@@ -203,14 +207,20 @@ class CardFillingBot(Bot):
             else:
                 self._reply_error(message)
 
-    def _reply_to_my_fills_request(self, callback_query: CallbackQuery, months: List[Month], fills: List[CardFill]) -> None:
+    def _reply_to_my_fills_request(
+        self,
+        callback_query: CallbackQuery,
+        from_user: TelegramUser,
+        months: List[Month],
+        fills: List[CardFill]
+    ) -> None:
         m_names = ', '.join(map(months_names.get, months))
         if len(fills) == 0:
             text = f'Не было пополнений в {m_names}.'
         else:
             text = (
                 f'Пополнения @{from_user.username} за {m_names}:\n' +
-                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description}' for fill in filtered_fills])
+                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description}' for fill in fills])
             )
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=text)
 
@@ -242,12 +252,7 @@ class CardFillingBot(Bot):
         finally:
             self.DbSession.remove()
         
-        self._reply_to_my_fills_request(callback_query, months, filtered_fills)
-
-    @dataclass
-    class UserSumOverPeriodDto:
-        username: str
-        amount: float
+        self._reply_to_my_fills_request(callback_query, from_user, months, filtered_fills)
 
     def _reply_to_per_month_request(self, callback_query: CallbackQuery, data: Dict[Month, List[UserSumOverPeriodDto]]) -> None:
         message_text = ''
@@ -258,7 +263,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month(self, callback_query: CallbackQuery) -> None:
-        months = find_months(callback_query.message.text)
+        months = self._try_parse_months_message_text(callback_query.message.text)
         
         db_session = self.DbSession()
         try:
