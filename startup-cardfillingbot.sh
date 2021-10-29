@@ -1,4 +1,4 @@
-docker rm -fv $(docker ps -aqf "name=cardfillingbot-${ENVIRONMENT}") | grep -q . && \
+docker ps -aqf "name=cardfillingbot-${ENVIRONMENT}" | grep -q . && docker rm -fv cardfillingbot-${ENVIRONMENT}
 docker run -d -p ${HOST_EXPOSED_PORT}:8000 --restart=unless-stopped --name=cardfillingbot-${ENVIRONMENT} \
     -e "TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" \
     -e "MYSQL_USER=${MYSQL_USER}" \
