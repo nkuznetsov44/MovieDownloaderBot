@@ -33,7 +33,7 @@ if __name__ == '__main__':
 import logging
 from flask import Flask, request
 from card_filling_bot import CardFillingBot, CardFillingBotSettings
-from config import test_token, mysql_user, mysql_password, mysql_host, mysql_database, webhook_url
+from config import card_filling_bot_token, mysql_user, mysql_password, mysql_host, mysql_database, webhook_url
 
 
 NEED_RESET_WEBHOOK = False
@@ -55,7 +55,7 @@ bot_settings = CardFillingBotSettings(
     mysql_database=mysql_database,
     logger=app.logger
 )
-bot = CardFillingBot(token=test_token, settings=bot_settings)
+bot = CardFillingBot(token=card_filling_bot_token, settings=bot_settings)
 
 
 webhook_info = bot.get_webhook_info()
