@@ -8,10 +8,7 @@ pipeline {
         }
         stage("Docker Push Image") {
             steps {
-                withCredentials([
-                    string(credentialsId: "docker-user", variable: "DOCKER_USER"),
-                    string(credentialsId: "docker-password", variable: "DOCKER_PASSWORD")
-                ]) {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD')]) {
                     sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}"
                 }
                 sh "docker push nkuznetsov44/cardfillingbot:${ENVIRONMENT}"
