@@ -27,7 +27,7 @@ pipeline {
                     string(credentialsId: 'cardfillingbot-webhook-url-prod', variable: 'WEBHOOK_URL'),
                     string(credentialsId: 'cardfillingbot-telegram-token-prod', variable: 'TELEGRAM_TOKEN')
                 ]) {
-                    runStartup()
+                    sh "./startup-cardfillingbot.sh"
                 }
             }
             else {
@@ -41,13 +41,9 @@ pipeline {
                     string(credentialsId: 'cardfillingbot-webhook-url-develop', variable: 'WEBHOOK_URL'),
                     string(credentialsId: 'cardfillingbot-telegram-token-develop', variable: 'TELEGRAM_TOKEN')
                 ]) {
-                    runStartup()
+                    sh "./startup-cardfillingbot.sh"
                 }
             }
         }
     }
-}
-
-def runStartup {
-    sh "./startup-cardfillingbot.sh"
 }
