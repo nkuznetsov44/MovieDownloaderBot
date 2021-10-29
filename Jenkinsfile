@@ -20,7 +20,7 @@ pipeline {
                 script {
                     if (params.ENVIRONMENT == "prod") {
                         environment {
-                            PORT = "8888"
+                            HOST_EXPOSED_PORT = "8888"
                         }
                         withCredentials([
                             usernamePassword(credentialsId: 'cardfillingbot-mysqldb-prod', usernameVariable: 'MYSQL_USER', passwordVariable: 'MYSQL_PASSWORD'),
@@ -34,7 +34,7 @@ pipeline {
                     }
                     else {
                         environment {
-                            PORT = "8889"
+                            HOST_EXPOSED_PORT = "8889"
                         }
                         withCredentials([
                             usernamePassword(credentialsId: 'cardfillingbot-mysqldb-develop', usernameVariable: 'MYSQL_USER', passwordVariable: 'MYSQL_PASSWORD'),
