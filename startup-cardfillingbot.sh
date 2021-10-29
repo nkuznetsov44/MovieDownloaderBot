@@ -1,4 +1,4 @@
-docker run -d -p ${PORT}:8000 --restart=unless-stopped -name cardfillingbot-${ENVIRONMENT} \
+docker run -d -p ${PORT}:8000 --restart=unless-stopped --name=cardfillingbot-${ENVIRONMENT} \
     -e "TELEGRAM_TOKEN=${TELEGRAM_TOKEN}" \
     -e "MYSQL_USER=${MYSQL_USER}" \
     -e "MYSQL_PASSWORD=${MYSQL_PASSWORD}" \
