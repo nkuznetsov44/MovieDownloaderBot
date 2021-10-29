@@ -1,7 +1,4 @@
-FROM arm32v7/python:3.9.7-alpine
-
-# set work directory
-WORKDIR /usr/src/app
+FROM python:3.9.7-alpine
 
 # set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -14,3 +11,7 @@ RUN pip install -r requirements.txt
 
 # copy project
 COPY . .
+
+WORKDIR .
+
+CMD ["gunicorn", "--bind", ":8000", "wsgi:app"]

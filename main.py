@@ -31,12 +31,15 @@ if __name__ == '__main__':
             time.sleep(30)"""
 
 import logging
+import os
 from flask import Flask, request
 from card_filling_bot import CardFillingBot, CardFillingBotSettings
-from config import card_filling_bot_token, mysql_user, mysql_password, mysql_host, mysql_database, webhook_url
 
 
 NEED_RESET_WEBHOOK = False
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+if not WEBHOOK_URL:
+    raise Exception('Environment variable WEBHOOK_URL is not set')
 
 
 app = Flask(__name__)
@@ -49,24 +52,24 @@ if __name__ != '__main__':
 
 
 bot_settings = CardFillingBotSettings(
-    mysql_user=mysql_user,
-    mysql_password=mysql_password,
-    mysql_host=mysql_host,
-    mysql_database=mysql_database,
+    mysql_user=os.getenv('MYSQL_USER'),
+    mysql_password=os.getenv('MYSQL_PASSWORD'),
+    mysql_host=os.getenv('MYSQL_HOST'),
+    mysql_database=os.getenv('MYSQL_DATABASE'),
     logger=app.logger
 )
-bot = CardFillingBot(token=card_filling_bot_token, settings=bot_settings)
+bot = CardFillingBot(token=os.getenv('TELEGRAM_TOKEN'), settings=bot_settings)
 
 
 webhook_info = bot.get_webhook_info()
 app.logger.info(webhook_info)
 
-need_reset_webhook = NEED_RESET_WEBHOOK or not webhook_info.url
+need_reset_webhook = NEED_RESET_WEBHOOK or not webhook_info.url or webhook_info.url != WEBHOOK_URL
 
 if need_reset_webhook:
     if webhook_info.url:
         bot.delete_webhook()
-    bot.set_webhook(url=webhook_url)
+    bot.set_webhook(url=WEBHOOK_URL)
 
 
 @app.route('/cardFillingBot', methods=['POST'])
