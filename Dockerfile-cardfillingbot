@@ -10,8 +10,9 @@ COPY ./requirements.txt .
 RUN pip install -r requirements.txt
 
 # copy project
-COPY . .
+COPY ./card_filling_bot ./card_filling_bot
+COPY ./telegramapi ./card_filling_bot/telegramapi
 
-WORKDIR .
+WORKDIR /card_filling_bot
 
 CMD ["gunicorn", "--bind", ":8000", "wsgi:app"]
