@@ -8,10 +8,17 @@ pipeline {
         }
         stage("Docker Push Image") {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD')]) {
-                    sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}"
+                script {
+                    if (params.NEED_PUSH_IMAGE) {
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD')]) {
+                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}"
+                        }
+                        sh "docker push nkuznetsov44/cardfillingbot:${ENVIRONMENT}"
+                    }
+                    else {
+                        echo "Skip pushing image step"
+                    }
                 }
-                sh "docker push nkuznetsov44/cardfillingbot:${ENVIRONMENT}"
             }
         }
         stage("Docker Run Container") {
@@ -29,6 +36,7 @@ pipeline {
                             string(credentialsId: 'cardfillingbot-webhook-url-prod', variable: 'WEBHOOK_URL'),
                             string(credentialsId: 'cardfillingbot-telegram-token-prod', variable: 'TELEGRAM_TOKEN')
                         ]) {
+                            sh "echo ${HOST_EXPOSED_PORT}"
                             sh "./startup-cardfillingbot.sh"
                         }
                     }
@@ -43,6 +51,7 @@ pipeline {
                             string(credentialsId: 'cardfillingbot-webhook-url-develop', variable: 'WEBHOOK_URL'),
                             string(credentialsId: 'cardfillingbot-telegram-token-develop', variable: 'TELEGRAM_TOKEN')
                         ]) {
+                            sh "echo ${HOST_EXPOSED_PORT}"
                             sh "./startup-cardfillingbot.sh"
                         }
                     }
