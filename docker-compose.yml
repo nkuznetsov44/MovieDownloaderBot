@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  cardfillingbot:
+    build:
+      dockerfile: Dockerfile-cardfillingbot
+      context: .
+    image: nkuznetsov44/cardfillingbot-${ENVIRONMENT}
+    ports:
+      - ${HOST_EXPOSED_PORT}:8000
+    logging:
+      driver: "json-file"
+      options:
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+    restart: unless-stopped
