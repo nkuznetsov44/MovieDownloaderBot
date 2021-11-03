@@ -5,7 +5,7 @@ services:
     build:
       dockerfile: Dockerfile-cardfillingbot
       context: .
-    image: nkuznetsov44/cardfillingbot-${ENVIRONMENT}
+    image: nkuznetsov44/cardfillingbot:${ENVIRONMENT}
     ports:
       - ${HOST_EXPOSED_PORT}:8000
     logging:
