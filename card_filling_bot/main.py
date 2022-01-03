@@ -40,7 +40,7 @@ if need_reset_webhook:
     bot.set_webhook(url=WEBHOOK_URL)
 
 
-@app.route('/cardFillingBot', methods=['POST'])
+@app.route('/', methods=['POST'])
 def receive_update():
     try:
         update = request.get_json()

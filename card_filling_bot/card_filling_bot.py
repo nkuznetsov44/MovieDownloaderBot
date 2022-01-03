@@ -254,15 +254,30 @@ class CardFillingBot(Bot):
         
         self._reply_to_my_fills_request(callback_query, from_user, months, filtered_fills)
 
-    def _reply_to_per_month_request(self, callback_query: CallbackQuery, data: Dict[Month, List[UserSumOverPeriodDto]]) -> None:
+    def _reply_to_per_month_request(self, callback_query: CallbackQuery, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> None:
         message_text = ''
         for month, monthly_data in data.items():
-            message_text = message_text + f'*{months_names[month]}:*\n' + '\n'.join(f'@{user_sum_per_month.username}: {user_sum_per_month.amount}' for user_sum_per_month in monthly_data) + '\n\n'
+            is_current_year = (year == datetime.now().year)
+            message_text = message_text + f'*{months_names[month]} {year}:*\n' + '\n'.join(f'@{user_sum_per_month.username}: {user_sum_per_month.amount}' for user_sum_per_month in monthly_data) + '\n\n'
         message_text = message_text.replace('_', '\\_').replace('.', '\\.')
-        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
+        if year == datetime.now().year:
+            previous_year = InlineKeyboardButton(text='Предыдущий год', callback_data='previous_year')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
+            self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2, reply_markup=keyboard)
+        else:
+            self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
 
     @callback_query_handler(accepted_data=['stat'])
-    def per_month(self, callback_query: CallbackQuery) -> None:
+    def per_month_current_year(self, callback_query: CallbackQuery) -> None:
+        self.per_month(callback_query)
+
+    @callback_query_handler(accepted_data=['previous_year'])
+    def per_month_previous_year(self, callback_query: CallbackQuery) -> None:
+        previous_year = datetime.now().year - 1
+        self.per_month(callback_query, year=previous_year)
+
+    def per_month(self, callback_query: CallbackQuery, year: int = None) -> None:
+        year = year or datetime.now().year
         months = self._try_parse_months_message_text(callback_query.message.text)
         
         db_session = self.DbSession()
@@ -270,13 +285,13 @@ class CardFillingBot(Bot):
             per_month_data: Dict[Month, List[UserSumOverPeriodDto]] = {}
             for month in months:
                 res = db_session.execute(
-                    f'select username, amount from monthly_report where month_num = {month.value} and fill_year = {datetime.now().year}'
+                    f'select username, amount from monthly_report where month_num = {month.value} and fill_year = {year}'
                 ).fetchall()
                 per_month_data[month] = [UserSumOverPeriodDto(*row) for row in res]
         finally:
             self.DbSession.remove()
         
-        self._reply_to_per_month_request(callback_query, per_month_data)
+        self._reply_to_per_month_request(callback_query, per_month_data, year=year)
 
     def _reply_to_total_request(self, callback_query: CallbackQuery, data: List[UserSumOverPeriodDto]) -> None:
         message_text = '\n'.join(f'@{user_sum_total.username}: {user_sum_total.amount}' for user_sum_total in data)
