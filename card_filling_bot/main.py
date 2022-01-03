@@ -4,7 +4,7 @@ from flask import Flask, request
 from card_filling_bot import CardFillingBot, CardFillingBotSettings
 
 
-NEED_RESET_WEBHOOK = False
+NEED_RESET_WEBHOOK = bool(os.getenv('NEED_RESET_WEBHOOK', False))
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 if not WEBHOOK_URL:
     raise Exception('Environment variable WEBHOOK_URL is not set')

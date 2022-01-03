@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  mariadb-dev:
+    image: mariadb
+    container_name: cardfillingbot-dev-mariadb
+    volumes:
+      # - ./card_filling_bot/mariadb/CardFillingBot_schema.sql:/docker-entrypoint-initdb.d/CardFillingBot_schema.sql
+      - ./card_filling_bot/mariadb/CardFillingBot.sql:/docker-entrypoint-initdb.d/CardFillingBot.sql
+      - ./card_filling_bot/mariadb/CardFillingBot_user.sql:/docker-entrypoint-initdb.d/CardFillingBot_user.sql
+    environment:
+      - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=yes
+      - MARIADB_DATABASE=CardFillingBot
+  cardfillingbot:
+    build:
+      dockerfile: Dockerfile-cardfillingbot
+      context: .
+    image: nkuznetsov44/cardfillingbot:${ENVIRONMENT}
+    container_name: cardfillingbot-dev
+    depends_on:
+      - mariadb-dev
+    ports:
+      - ${HOST_EXPOSED_PORT}:8000
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - MYSQL_USER=card_filling_bot
+      - MYSQL_PASSWORD=card_filling_bot_dev
+      - MYSQL_HOST=mariadb-dev
+      - MYSQL_DATABASE=CardFillingBot
+      - WEBHOOK_URL=${WEBHOOK_URL}
+    restart: unless-stopped

@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode, User as TelegramApiUser
-from model import TelegramUser, CardFill
+from model import TelegramUser, CardFill, Category
 
 
 class Month(Enum):
@@ -100,8 +100,10 @@ class UserSumOverPeriodDto:
 
 @dataclass
 class FillDto:
+    id: Optional[int]
     amount: str
     description: Optional[str]
+    category_name: Optional[str]
 
 
 class CardFillingBot(Bot):
@@ -132,7 +134,7 @@ class CardFillingBot(Bot):
                 description = before_phrase + after_phrase
 
         if cnt == 1:
-            return FillDto(amount, description)
+            return FillDto(None, amount, description, None)
         return None
 
     def _try_parse_months_message_text(self, message_text: str) -> List[Month]:
@@ -149,13 +151,73 @@ class CardFillingBot(Bot):
     def _reply_to_fill_message(self, message: Message, fill: FillDto) -> None:
         reply_text = f'Принято {fill.amount}р. от @{message.from_user.username}'
         if fill.description:
-            reply_text += f': {fill.description}.'
-        else:
-            reply_text += '.'
+            reply_text += f': {fill.description}'
+        reply_text += f', категория: {fill.category_name}.'
+
+        change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
+
         self.send_message(
             chat_id=message.chat.chat_id,
-            text=reply_text
+            text=reply_text,
+            reply_markup=keyboard
         )
+
+    @callback_query_handler(accepted_data=['show_category'])
+    def show_category(self, callback_query: CallbackQuery) -> None:
+        fill_id = callback_query.data.replace('show_category', '')
+        try:
+            db_session = self.DbSession()
+            fill = db_session.query(CardFill).get(fill_id)
+            keyboard_buttons = []
+            for cat in db_session.query(Category).all():
+                keyboard_buttons.append([InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')])
+            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+            reply_text = f'Выберите категорию для пополнения {fill.amount}р.'
+            if fill.description:
+                reply_text += f' ({fill.description})'
+            self.send_message(
+                chat_id=callback_query.message.chat.chat_id,
+                text=reply_text,
+                reply_markup=keyboard
+            )
+        finally:
+            self.DbSession.remove()
+
+    def _reply_to_change_category_request(self, callback_query: CallbackQuery, fill: FillDto) -> None:
+        reply_text = f'Категория пополнения {fill.amount}р.'
+        if fill.description:
+            reply_text += f' ({fill.description})'
+        reply_text += f' изменена на "{fill.category_name}".'
+
+        change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
+
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=reply_text,
+            reply_markup=keyboard
+        )
+
+    @callback_query_handler(accepted_data=['change_category'])
+    def change_category(self, callback_query: CallbackQuery) -> None:
+        category_code, fill_id = callback_query.data.replace('change_category', '').split('/')
+        db_session = self.DbSession()
+        try:
+            fill = db_session.query(CardFill).get(int(fill_id))
+            old_category = fill.category
+            fill.category_code = category_code
+            self.logger.info(f'Changed category for fill {fill_id} to {category_code}')
+            # saving description as category alias if not defined
+            if old_category.code == 'OTHER' and fill.description:
+                category = db_session.query(Category).get(category_code)
+                category.add_alias(fill.description)
+                self.logger.info(f'Added alias {fill_dto.description} to category {category_code}')
+            db_session.commit()
+            fill_dto = FillDto(fill.fill_id, fill.amount, fill.description, fill.category.name)
+        finally:
+            self.DbSession.remove()
+        self._reply_to_change_category_request(callback_query, fill_dto)
 
     def _reply_to_months_message(self, message: Message, months: List[Month]) -> None:
         my = InlineKeyboardButton(text='Мои пополнения', callback_data='my')
@@ -185,15 +247,26 @@ class CardFillingBot(Bot):
                 self.logger.info(f'Found fill {fill}')
                 db_session = self.DbSession()
                 try:
+                    fill_category = db_session.query(Category).get('OTHER')
+                    try:
+                        fill_category: Category = next(
+                            filter(lambda cat: cat.fill_fits_category(fill.description), db_session.query(Category).all())
+                        )
+                    except StopIteration:
+                        pass
+                    fill.category_name = fill_category.name
+
                     # TODO: BEGIN TRAN
                     card_fill = CardFill(
                         user_id=message.from_user.user_id,
                         fill_date=datetime.fromtimestamp(message.date),
                         amount=float(fill.amount),
-                        description=fill.description
+                        description=fill.description,
+                        category_code=fill_category.code,
                     )
                     db_session.add(card_fill)
                     db_session.commit()
+                    fill.id = card_fill.fill_id
                     self._reply_to_fill_message(message, fill)
                     # TODO: END TRAN
                 except Exception:
@@ -220,7 +293,7 @@ class CardFillingBot(Bot):
         else:
             text = (
                 f'Пополнения @{from_user.username} за {m_names}:\n' +
-                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description}' for fill in fills])
+                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category.name}' for fill in fills])
             )
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=text)
 
@@ -257,7 +330,6 @@ class CardFillingBot(Bot):
     def _reply_to_per_month_request(self, callback_query: CallbackQuery, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> None:
         message_text = ''
         for month, monthly_data in data.items():
-            is_current_year = (year == datetime.now().year)
             message_text = message_text + f'*{months_names[month]} {year}:*\n' + '\n'.join(f'@{user_sum_per_month.username}: {user_sum_per_month.amount}' for user_sum_per_month in monthly_data) + '\n\n'
         message_text = message_text.replace('_', '\\_').replace('.', '\\.')
         if year == datetime.now().year:
