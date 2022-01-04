@@ -8,37 +8,10 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode, User as TelegramApiUser
 from model import TelegramUser, CardFill, Category
-
-
-class Month(Enum):
-    january = 1
-    february = 2
-    march = 3
-    april = 4
-    may = 5
-    june = 6
-    july = 7
-    august = 8
-    september = 9
-    october = 10
-    november = 11
-    december = 12
-
-
-months_regexps = {
-    Month.january: r'январ[яеь]',
-    Month.february: r'феврал[яеь]',
-    Month.march: r'март[ае]?',
-    Month.april: r'апрел[яеь]',
-    Month.may: r'ма[йяе]',
-    Month.june: r'июн[яеь]',
-    Month.july: r'июл[яеь]',
-    Month.august: r'август[ае]?',
-    Month.september: r'сентябр[яеь]',
-    Month.october: r'октябр[яеь]',
-    Month.november: r'ноябр[яеь]',
-    Month.december: r'декабр[яеь]',
-}
+from dto.dto import FillDto
+from message_parsers.month_message_parser import Month, MonthMessageParser
+from message_parsers.fill_message_parser import FillMessageParser
+from services.card_fill_service import CardFillService, CardFillServiceSettings
 
 
 months_names = {
@@ -98,14 +71,6 @@ class UserSumOverPeriodDto:
     amount: float
 
 
-@dataclass
-class FillDto:
-    id: Optional[int]
-    amount: str
-    description: Optional[str]
-    category_name: Optional[str]
-
-
 class CardFillingBot(Bot):
     def __init__(self, token: str, settings: CardFillingBotSettings) -> None:
         super().__init__(token)
@@ -114,39 +79,15 @@ class CardFillingBot(Bot):
         self.logger.info(f'Creating database engine {settings.mysql_database}@{settings.mysql_host} as {settings.mysql_user}')
         self._db_engine = create_engine(self._SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
         self.DbSession = scoped_session(sessionmaker(bind=self._db_engine))
-        self._numbers_regexp = re.compile(r'[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?')
+
+        card_fill_service_settings = CardFillServiceSettings(
+            settings.mysql_user, settings.mysql_password, settings.mysql_host, settings.mysql_database, settings.logger
+        )
+        self.card_fill_service = CardFillService(card_fill_service_settings)
 
     @property
     def _SQLALCHEMY_DATABASE_URI(self) -> str:
         return f'mysql+pymysql://{self._settings.mysql_user}:{self._settings.mysql_password}@{self._settings.mysql_host}/{self._settings.mysql_database}'
-
-    def _try_parse_fill_message_text(self, message_text: str) -> Optional[FillDto]:
-        """Returns FillDto on successful parse or None if no fill was found."""
-        cnt = 0
-        for number_match in re.finditer(self._numbers_regexp, message_text):
-            cnt += 1
-            amount = number_match.group()
-            before_phrase = message_text[:number_match.start()].strip()
-            after_phrase = message_text[number_match.end():].strip()
-            if len(before_phrase) > 0 and len(after_phrase) > 0:
-                description = ' '.join([before_phrase, after_phrase])
-            else:
-                description = before_phrase + after_phrase
-
-        if cnt == 1:
-            return FillDto(None, amount, description, None)
-        return None
-
-    def _try_parse_months_message_text(self, message_text: str) -> List[Month]:
-        """Returns list of months on successful parse or empty list if no months were found."""
-        results: List[Month] = []
-        if message_text:
-            for word in message_text.split(' '):
-                for month, month_re in months_regexps.items():
-                    result = re.search(month_re, word, re.IGNORECASE)
-                    if result:
-                        results.append(month)
-        return results
 
     def _reply_to_fill_message(self, message: Message, fill: FillDto) -> None:
         reply_text = f'Принято {fill.amount}р. от @{message.from_user.username}'
@@ -220,8 +161,9 @@ class CardFillingBot(Bot):
         self._reply_to_change_category_request(callback_query, fill_dto)
 
     def _reply_to_months_message(self, message: Message, months: List[Month]) -> None:
-        my = InlineKeyboardButton(text='Мои пополнения', callback_data='my')
-        stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data='stat')
+        months_numbers = ','.join([str(m.value) for m in months])
+        my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
+        stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
         total = InlineKeyboardButton(text='Сумма всех пополнений', callback_data='total')
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [total]])
         self.send_message(
@@ -240,40 +182,21 @@ class CardFillingBot(Bot):
     def basic_message_handler(self, message: Message) -> None:
         if message.text:
             self.logger.info(f'Parsing text {message.text}')
-            fill = self._try_parse_fill_message_text(message.text)
-            months = self._try_parse_months_message_text(message.text)
+            fill = FillMessageParser().parse(message.text).data
+            months = MonthMessageParser().parse(message.text).data
 
             if fill:
                 self.logger.info(f'Found fill {fill}')
-                db_session = self.DbSession()
                 try:
-                    fill_category = db_session.query(Category).get('OTHER')
-                    try:
-                        fill_category: Category = next(
-                            filter(lambda cat: cat.fill_fits_category(fill.description), db_session.query(Category).all())
-                        )
-                    except StopIteration:
-                        pass
-                    fill.category_name = fill_category.name
-
-                    # TODO: BEGIN TRAN
-                    card_fill = CardFill(
-                        user_id=message.from_user.user_id,
-                        fill_date=datetime.fromtimestamp(message.date),
-                        amount=float(fill.amount),
-                        description=fill.description,
-                        category_code=fill_category.code,
+                    fill = self.card_fill_service.handle_new_fill(
+                        fill,
+                        from_user_id=message.from_user.user_id,
+                        fill_date=datetime.fromtimestamp(message.date)
                     )
-                    db_session.add(card_fill)
-                    db_session.commit()
-                    fill.id = card_fill.fill_id
                     self._reply_to_fill_message(message, fill)
-                    # TODO: END TRAN
                 except Exception:
                     self._reply_error(message)
                     raise
-                finally:
-                    self.DbSession.remove()
             elif months:
                 self.logger.info(f'Found months {months}')
                 self._reply_to_months_message(message, months)
@@ -313,7 +236,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['my'])
     def my_fills(self, callback_query: CallbackQuery) -> None:
-        months = self._try_parse_months_message_text(callback_query.message.text)
+        months = [Month(int(val)) for val in callback_query.data.replace('my', '').split(',')]
 
         db_session = self.DbSession()
         try:
@@ -333,6 +256,7 @@ class CardFillingBot(Bot):
             message_text = message_text + f'*{months_names[month]} {year}:*\n' + '\n'.join(f'@{user_sum_per_month.username}: {user_sum_per_month.amount}' for user_sum_per_month in monthly_data) + '\n\n'
         message_text = message_text.replace('_', '\\_').replace('.', '\\.')
         if year == datetime.now().year:
+            # TODO: Here month numbers must be passed to callback data e.g. previous_year1,2 for jan and feb
             previous_year = InlineKeyboardButton(text='Предыдущий год', callback_data='previous_year')
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
             self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2, reply_markup=keyboard)
@@ -341,17 +265,18 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
-        self.per_month(callback_query)
+        months = [Month(int(val)) for val in callback_query.data.replace('stat', '').split(',')]
+        self.per_month(callback_query, months)
 
     @callback_query_handler(accepted_data=['previous_year'])
     def per_month_previous_year(self, callback_query: CallbackQuery) -> None:
+        months = [Month(int(val)) for val in callback_query.data.replace('previous_year', '').split(',')]
         previous_year = datetime.now().year - 1
-        self.per_month(callback_query, year=previous_year)
+        self.per_month(callback_query, months, year=previous_year)
 
-    def per_month(self, callback_query: CallbackQuery, year: int = None) -> None:
+    def per_month(self, callback_query: CallbackQuery, months: List[Month], year: int = None) -> None:
         year = year or datetime.now().year
-        months = self._try_parse_months_message_text(callback_query.message.text)
-        
+
         db_session = self.DbSession()
         try:
             per_month_data: Dict[Month, List[UserSumOverPeriodDto]] = {}
