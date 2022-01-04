@@ -1,6 +1,6 @@
 from typing import List
 import re
-from sqlalchemy import Column, ForeignKey, Integer, Boolean, String, DateTime, Float
+from sqlalchemy import Column, ForeignKey, Integer, Boolean, String, DateTime, Float, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -53,6 +53,7 @@ class Category(Base):
     code = Column('code', String, primary_key=True)
     name = Column('name', String)
     aliases = Column('aliases', String)
+    proportion = Column('proportion', Numeric)
     card_fills = relationship('CardFill')
 
     def __repr__(self) -> str:
