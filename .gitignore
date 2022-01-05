@@ -10,4 +10,3 @@ pyvenv.cfg
 *.log
 startup-*-local.sh
 .env
-card_filling_bot/mariadb/*.sql
