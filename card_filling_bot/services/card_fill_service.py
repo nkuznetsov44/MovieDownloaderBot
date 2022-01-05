@@ -161,14 +161,13 @@ class CardFillService:
     def get_total_report(self) -> List[UserSumOverPeriodDto]:
         db_session = self.DbSession()
         try:
-            query = db_session.execute(
+            res = db_session.execute(
                 'select u.username, cat.name, sum(amount) as total_amount '
                 'from card_fill cf '
                 'join telegram_user u on cf.user_id = u.user_id '
                 'join category cat on cf.category_code = cat.code '
                 'group by u.username, cat.name'
             ).fetchall()
-            res = db_session.execute(query)
             return UserSumOverPeriodDto.from_rows(res)
         finally:
             self.DbSession.remove()
