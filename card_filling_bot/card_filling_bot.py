@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
-from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode, User as TelegramApiUser
+from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
@@ -111,8 +111,9 @@ class CardFillingBot(Bot):
 
     def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
         fill = parsed_message.data
+        from_user = UserDto.from_telegramapi(parsed_message.original_message.from_user)
         try:
-            fill = self.card_fill_service.handle_new_fill(fill)
+            fill = self.card_fill_service.handle_new_fill(fill, from_user)
         except:
             self.send_message(
                 chat_id=parsed_message.original_message.chat.chat_id,
@@ -163,13 +164,13 @@ class CardFillingBot(Bot):
                 self.handle_months_parsed_message(months_message)
                 return
 
-    def _format_user_fills(self, fills: List[FillDto], from_user: UserDto, months: List[Month]) -> str:
+    def _format_user_fills(self, fills: List[FillDto], from_user: UserDto, months: List[Month], year: int) -> str:
         m_names = ', '.join(map(month_names.get, months))
         if len(fills) == 0:
-            text = f'Не было пополнений в {m_names}.'
+            text = f'Не было пополнений в {m_names} {year}.'
         else:
             text = (
-                    f'Пополнения @{from_user.username} за {m_names}:\n' +
+                    f'Пополнения @{from_user.username} за {m_names} {year}:\n' +
                     '\n'.join(
                         [f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category_name}' for fill in fills]
                     )
@@ -183,7 +184,7 @@ class CardFillingBot(Bot):
         from_user = UserDto.from_telegramapi(callback_query.from_user)
         fills = self.card_fill_service.get_user_fills_in_months(from_user, months, year)
 
-        message_text = self._format_user_fills(fills, from_user, months)
+        message_text = self._format_user_fills(fills, from_user, months, year)
         months_numbers = ','.join([str(m.value) for m in months])
         previous_year = InlineKeyboardButton(
             text='Предыдущий год', callback_data=f'fills_previous_year{months_numbers}'
@@ -197,22 +198,18 @@ class CardFillingBot(Bot):
         previous_year = datetime.now().year - 1
         from_user = UserDto.from_telegramapi(callback_query.from_user)
         fills = self.card_fill_service.get_user_fills_in_months(from_user, months, previous_year)
-        message_text = self._format_user_fills(fills, from_user, months)
+        message_text = self._format_user_fills(fills, from_user, months, previous_year)
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
 
     def _format_monthly_report(self, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> str:
         message_text = ''
         for month, monthly_data in data.items():
-            message_text = (
-                    message_text
-                    + f'*{month_names[month]} {year}:*\n'
-                    + '\n'.join(
-                        f'@{user_sum_per_month.username}: {user_sum_per_month.amount}'
-                        for user_sum_per_month in monthly_data
-                    )
-                    + '\n\n'
-            )
-        message_text = message_text.replace('_', '\\_').replace('.', '\\.')
+            message_text += f'*{month_names[month]} {year}:*\n'
+            for user_sum_per_month in monthly_data:
+                message_text += f'@{user_sum_per_month.username}: {user_sum_per_month.amount}\n'
+                for category, category_amount in user_sum_per_month.by_category.items():
+                    message_text += f'  - {category}: {category_amount}\n'
+        message_text = message_text.replace('_', '\\_').replace('.', '\\.').replace('-', '\\-')
         return message_text
 
     @callback_query_handler(accepted_data=['stat'])

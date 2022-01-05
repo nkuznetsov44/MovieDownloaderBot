@@ -70,6 +70,23 @@ SET @saved_cs_client     = @@character_set_client;
 SET character_set_client = @saved_cs_client;
 
 --
+-- Temporary view structure for view `monthly_report_by_category`
+--
+
+DROP TABLE IF EXISTS `monthly_report_by_category`;
+/*!50001 DROP VIEW IF EXISTS `monthly_report_by_category`*/;
+SET @saved_cs_client     = @@character_set_client;
+/*!50503 SET character_set_client = utf8mb4 */;
+/*!50001 CREATE VIEW `monthly_report_by_category` AS SELECT
+ 1 AS `rownumber`,
+ 1 AS `username`,
+ 1 AS `fill_year`,
+ 1 AS `month_num`,
+ 1 AS `category_name`,
+ 1 AS `amount`*/;
+SET character_set_client = @saved_cs_client;
+
+--
 -- Temporary view structure for view `monthly_report_v2`
 --
 
@@ -77,7 +94,7 @@ DROP TABLE IF EXISTS `monthly_report_v2`;
 /*!50001 DROP VIEW IF EXISTS `monthly_report_v2`*/;
 SET @saved_cs_client     = @@character_set_client;
 /*!50503 SET character_set_client = utf8mb4 */;
-/*!50001 CREATE VIEW `monthly_report_v2` AS SELECT 
+/*!50001 CREATE VIEW `monthly_report_v2` AS SELECT
  1 AS `rownumber`,
  1 AS `fill_month`,
  1 AS `kuznetsov_na`,
@@ -121,6 +138,24 @@ CREATE TABLE `telegram_user` (
 /*!50001 SET collation_connection      = @saved_col_connection */;
 
 --
+-- Final view structure for view `monthly_report_by_category`
+--
+
+/*!50001 DROP VIEW IF EXISTS `monthly_report_by_category`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_general_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`root`@`%` SQL SECURITY DEFINER */
+/*!50001 VIEW `monthly_report_by_category` AS select row_number() over ( partition by NULL order by NULL) AS `rownumber`,`tuser`.`username` AS `username`,year(`cf`.`fill_date`) AS `fill_year`,month(`cf`.`fill_date`) AS `month_num`,`cat`.`name` AS `category_name`,sum(`cf`.`amount`) AS `amount` from ((`card_fill` `cf` join `telegram_user` `tuser` on(`tuser`.`user_id` = `cf`.`user_id`)) join `category` `cat` on(`cat`.`code` = `cf`.`category_code`)) group by `tuser`.`username`,year(`cf`.`fill_date`),month(`cf`.`fill_date`),`cat`.`name` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
 -- Final view structure for view `monthly_report_v2`
 --
 
@@ -147,4 +182,4 @@ CREATE TABLE `telegram_user` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2022-01-04 23:16:15
+-- Dump completed on 2022-01-05 18:25:13

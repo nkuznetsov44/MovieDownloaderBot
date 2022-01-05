@@ -1,4 +1,4 @@
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, Dict, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from telegramapi.types import User as TelegramapiUser
@@ -76,3 +76,25 @@ class UserDto:
 class UserSumOverPeriodDto:
     username: str
     amount: float
+    by_category: Optional[Dict[str, float]]
+
+    @staticmethod
+    def from_rows(rows: List[Tuple[str, str, float]]) -> List['UserSumOverPeriodDto']:
+        """[('kuznetsov_na', 'Ð´Ñ€ÑƒÐ³Ð¾Ðµ', 1000.0), ('kuznetsov_na', 'ÐµÐ´Ð°', 102.0)]"""
+        tmp: Dict[str, Dict[str, float]] = {}
+        for username, category, amount in rows:
+            by_category = tmp.get(username)
+            if not by_category:
+                tmp[username] = by_category = {}
+            by_category[category] = amount
+
+        res: List['UserSumOverPeriodDto'] = []
+        for username, by_category in tmp.items():
+            amount = sum(by_category.values())
+            res.append(UserSumOverPeriodDto(username, amount, by_category))
+        return res
+
+    def __repr__(self):
+        return (
+            f'UserSumOverPeriodDto<username: {self.username}, amount: {self.amount}, by_category: {self.by_category}>'
+        )

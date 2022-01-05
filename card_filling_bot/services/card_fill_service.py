@@ -1,5 +1,5 @@
 from typing import Any, List, Dict, TYPE_CHECKING
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from model import CardFill, Category, TelegramUser
 from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto
@@ -57,9 +57,23 @@ class CardFillService:
         self._db_engine = create_engine(database_uri, pool_recycle=3600)
         self.DbSession = scoped_session(sessionmaker(bind=self._db_engine))
 
-    def handle_new_fill(self, fill: FillDto) -> FillDto:
+    def handle_new_fill(self, fill: FillDto, from_user: UserDto) -> FillDto:
         db_session = self.DbSession()
         try:
+            user = db_session.query(TelegramUser).get(from_user.id)
+            if not user:
+                new_user = TelegramUser(
+                    user_id=from_user.id,
+                    is_bot=from_user.is_bot,
+                    first_name=from_user.first_name,
+                    last_name=from_user.last_name,
+                    username=from_user.username,
+                    language_code=from_user.language_code,
+                )
+                db_session.add(new_user)
+                user = new_user
+                self.logger.info(f'Create new user {user}')
+
             fill_category = db_session.query(Category).get('OTHER')
             try:
                 fill_category: Category = next(
@@ -69,10 +83,9 @@ class CardFillService:
                 pass
             fill.category_name = fill_category.name
 
-            # TODO: create new user if not present
             # TODO: BEGIN TRAN
             card_fill = CardFill(
-                user_id=fill.user_id,
+                user_id=user.user_id,
                 fill_date=fill.fill_date,
                 amount=float(fill.amount),
                 description=fill.description,
@@ -123,28 +136,11 @@ class CardFillService:
             per_month_data: Dict[Month, List[UserSumOverPeriodDto]] = {}
             for month in months:
                 res = db_session.execute(
-                    'select username, amount from monthly_report '
+                    'select username, category_name, amount from monthly_report_by_category '
                     f'where month_num = {month.value} and fill_year = {year}'
                 ).fetchall()
-                per_month_data[month] = [UserSumOverPeriodDto(*row) for row in res]
+                per_month_data[month] = UserSumOverPeriodDto.from_rows(res)
             return per_month_data
-        finally:
-            self.DbSession.remove()
-
-    def create_new_user(self, **kwargs: Dict[str, Any]) -> UserDto:
-        db_session = self.DbSession()
-        try:
-            tg_user = TelegramUser(
-                user_id=kwargs.pop('user_id'),
-                is_bot=kwargs.pop('is_bot'),
-                first_name=kwargs.pop('first_name'),
-                last_name=kwargs.pop('last_name'),
-                username=kwargs.pop('username'),
-                language_code=kwargs.pop('language_code')
-            )
-            db_session.add(tg_user)
-            db_session.commit()
-            self.info(f'Create new user {tg_user}')
         finally:
             self.DbSession.remove()
 
@@ -165,11 +161,13 @@ class CardFillService:
     def get_total_report(self) -> List[UserSumOverPeriodDto]:
         db_session = self.DbSession()
         try:
-            query = db_session.query(
-                TelegramUser.username,
-                func.sum(CardFill.amount).label('total_amount')
-            ).join(CardFill).group_by(TelegramUser.username)
+            query = db_session.execute(
+                'select cf.username, cat.name, sum(amount) as total_amount '
+                'from card_fill cf '
+                'join category cat on cf.category_code = cat.code '
+                'group by cf.username, cat.name'
+            ).fetchall()
             res = db_session.execute(query)
-            return [UserSumOverPeriodDto(*row) for row in res]
+            return UserSumOverPeriodDto.from_rows(res)
         finally:
             self.DbSession.remove()
