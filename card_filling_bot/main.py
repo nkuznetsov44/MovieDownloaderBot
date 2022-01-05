@@ -24,6 +24,8 @@ bot_settings = CardFillingBotSettings(
     mysql_password=os.getenv('MYSQL_PASSWORD'),
     mysql_host=os.getenv('MYSQL_HOST'),
     mysql_database=os.getenv('MYSQL_DATABASE'),
+    minor_proportion_user_id=int(os.getenv('MINOR_PROPORTION_USER_ID')),
+    major_proportion_user_id=int(os.getenv('MAJOR_PROPORTION_USER_ID')),
     logger=app.logger
 )
 bot = CardFillingBot(token=os.getenv('TELEGRAM_TOKEN'), settings=bot_settings)

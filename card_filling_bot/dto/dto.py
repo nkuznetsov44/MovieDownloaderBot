@@ -6,6 +6,7 @@ from model import CardFill
 
 if TYPE_CHECKING:
     from datetime import datetime
+    from decimal import Decimal
 
 
 class Month(Enum):
@@ -76,21 +77,22 @@ class UserDto:
 class UserSumOverPeriodDto:
     username: str
     amount: float
-    by_category: Optional[Dict[str, float]]
+    by_category: Optional[Dict[str, Tuple[float, float]]]  # category -> (amount, proportion)
 
     @staticmethod
-    def from_rows(rows: List[Tuple[str, str, float]]) -> List['UserSumOverPeriodDto']:
-        """[('kuznetsov_na', 'Ð´Ñ€ÑƒÐ³Ð¾Ðµ', 1000.0), ('kuznetsov_na', 'ÐµÐ´Ð°', 102.0)]"""
-        tmp: Dict[str, Dict[str, float]] = {}
-        for username, category, amount in rows:
+    def from_rows(rows: List[Tuple[str, str, float, 'Decimal']]) -> List['UserSumOverPeriodDto']:
+        """[('kuznetsov_na', 'Ð´Ñ€ÑƒÐ³Ð¾Ðµ', 1000.0, 0.80), ('kuznetsov_na', 'ÐµÐ´Ð°', 102.0, 1.00)]"""
+        tmp: Dict[str, Dict[str, Tuple[float, float]]] = {}  # username -> (category -> (amount, proportion))
+        for username, category, amount, proportion in rows:
             by_category = tmp.get(username)
             if not by_category:
                 tmp[username] = by_category = {}
-            by_category[category] = amount
+            by_category[category] = (amount, float(proportion))
 
         res: List['UserSumOverPeriodDto'] = []
         for username, by_category in tmp.items():
-            amount = sum(by_category.values())
+            # by_category: Dict[str, Tuple[float, float]] category -> (amount, proportion)
+            amount = sum([amount for amount, _ in by_category.values()])
             res.append(UserSumOverPeriodDto(username, amount, by_category))
         return res
 
@@ -98,3 +100,9 @@ class UserSumOverPeriodDto:
         return (
             f'UserSumOverPeriodDto<username: {self.username}, amount: {self.amount}, by_category: {self.by_category}>'
         )
+
+
+@dataclass
+class ProportionOverPeriodDto:
+    proportion_target: Optional[float]
+    proportion_actual: Optional[float]

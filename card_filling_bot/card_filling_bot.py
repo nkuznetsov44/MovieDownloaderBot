@@ -1,12 +1,16 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Tuple, TYPE_CHECKING
+from dataclasses import dataclass
 from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
-from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto
+from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto, ProportionOverPeriodDto
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
+
+if TYPE_CHECKING:
+    from logging import Logger
 
 
 month_names = {
@@ -25,40 +29,15 @@ month_names = {
 }
 
 
+@dataclass(frozen=True)
 class CardFillingBotSettings:
-    def __init__(
-        self,
-        mysql_user: str,
-        mysql_password: str,
-        mysql_host: str,
-        mysql_database: str,
-        logger: Any
-    ) -> None:
-        self._mysql_user = mysql_user
-        self._mysql_password = mysql_password
-        self._mysql_host = mysql_host
-        self._mysql_database = mysql_database
-        self._logger = logger
-
-    @property
-    def mysql_user(self) -> str:
-        return self._mysql_user
-
-    @property
-    def mysql_password(self) -> str:
-        return self._mysql_password
-    
-    @property
-    def mysql_host(self) -> str:
-        return self._mysql_host
-    
-    @property
-    def mysql_database(self) -> str:
-        return self._mysql_database
-
-    @property
-    def logger(self) -> Any:
-        return self._logger
+    mysql_user: str
+    mysql_password: str
+    mysql_host: str
+    mysql_database: str
+    minor_proportion_user_id: int
+    major_proportion_user_id: int
+    logger: 'Logger'
 
 
 class CardFillingBot(Bot):
@@ -66,7 +45,13 @@ class CardFillingBot(Bot):
         super().__init__(token)
         self.logger = settings.logger
         card_fill_service_settings = CardFillServiceSettings(
-            settings.mysql_user, settings.mysql_password, settings.mysql_host, settings.mysql_database, settings.logger
+            mysql_user=settings.mysql_user,
+            mysql_password=settings.mysql_password,
+            mysql_host=settings.mysql_host,
+            mysql_database=settings.mysql_database,
+            minor_proportion_user_id=settings.minor_proportion_user_id,
+            major_proportion_user_id=settings.major_proportion_user_id,
+            logger=settings.logger,
         )
         self.card_fill_service = CardFillService(card_fill_service_settings)
 
@@ -170,10 +155,10 @@ class CardFillingBot(Bot):
             text = f'Не было пополнений в {m_names} {year}.'
         else:
             text = (
-                    f'Пополнения @{from_user.username} за {m_names} {year}:\n' +
-                    '\n'.join(
-                        [f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category_name}' for fill in fills]
-                    )
+                f'Пополнения @{from_user.username} за {m_names} {year}:\n' +
+                '\n'.join(
+                    [f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category_name}' for fill in fills]
+                )
             )
         return text
 
@@ -201,15 +186,31 @@ class CardFillingBot(Bot):
         message_text = self._format_user_fills(fills, from_user, months, previous_year)
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
 
-    def _format_monthly_report(self, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> str:
+    def _format_monthly_report(
+        self, data: Dict[Month, Tuple[List[UserSumOverPeriodDto], ProportionOverPeriodDto]], year: int
+    ) -> str:
         message_text = ''
-        for month, monthly_data in data.items():
+        for month, (monthly_data, proportion_data) in data.items():
             message_text += f'*{month_names[month]} {year}:*\n'
             for user_sum_per_month in monthly_data:
                 message_text += f'@{user_sum_per_month.username}: {user_sum_per_month.amount}\n'
-                for category, category_amount in user_sum_per_month.by_category.items():
+                for category, (category_amount, category_proportion) in user_sum_per_month.by_category.items():
                     message_text += f'  - {category}: {category_amount}\n'
-        message_text = message_text.replace('_', '\\_').replace('.', '\\.').replace('-', '\\-')
+            message_text += '\n'
+            if proportion_data.proportion_target and proportion_data.proportion_actual:
+                message_text += (
+                    f'Пропорции\n  - текущая: {proportion_data.proportion_actual:.2f}\n'
+                    f'  - ожидаемая: {proportion_data.proportion_target:.2f}\n'
+                )
+            message_text += '\n'
+        message_text = (
+            message_text
+            .replace('_', '\\_')
+            .replace('.', '\\.')
+            .replace('-', '\\-')
+            .replace('(', '\\(')
+            .replace(')', '\\)')
+        )
         return message_text
 
     @callback_query_handler(accepted_data=['stat'])
