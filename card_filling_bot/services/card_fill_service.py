@@ -164,7 +164,7 @@ class CardFillService:
             query = db_session.execute(
                 'select u.username, cat.name, sum(amount) as total_amount '
                 'from card_fill cf '
-                'join telegram_user u on cf.user_id = u.user_id'
+                'join telegram_user u on cf.user_id = u.user_id '
                 'join category cat on cf.category_code = cat.code '
                 'group by u.username, cat.name'
             ).fetchall()
