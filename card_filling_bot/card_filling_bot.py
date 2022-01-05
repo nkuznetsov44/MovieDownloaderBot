@@ -1,20 +1,15 @@
-from typing import List, Dict, Any, Optional
-from enum import Enum
-import re
+from typing import List, Dict, Any
 from datetime import datetime
-from dataclasses import dataclass
-from sqlalchemy import create_engine, func
-from sqlalchemy.orm import scoped_session, sessionmaker
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode, User as TelegramApiUser
-from model import TelegramUser, CardFill, Category
-from dto.dto import FillDto
+from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto
+from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
 
 
-months_names = {
+month_names = {
     Month.january: 'Январь',
     Month.february: 'Февраль',
     Month.march: 'Март',
@@ -65,67 +60,41 @@ class CardFillingBotSettings:
     def logger(self) -> Any:
         return self._logger
 
-@dataclass
-class UserSumOverPeriodDto:
-    username: str
-    amount: float
-
 
 class CardFillingBot(Bot):
     def __init__(self, token: str, settings: CardFillingBotSettings) -> None:
         super().__init__(token)
-        self._settings = settings
         self.logger = settings.logger
-        self.logger.info(f'Creating database engine {settings.mysql_database}@{settings.mysql_host} as {settings.mysql_user}')
-        self._db_engine = create_engine(self._SQLALCHEMY_DATABASE_URI, pool_recycle=3600)
-        self.DbSession = scoped_session(sessionmaker(bind=self._db_engine))
-
         card_fill_service_settings = CardFillServiceSettings(
             settings.mysql_user, settings.mysql_password, settings.mysql_host, settings.mysql_database, settings.logger
         )
         self.card_fill_service = CardFillService(card_fill_service_settings)
 
-    @property
-    def _SQLALCHEMY_DATABASE_URI(self) -> str:
-        return f'mysql+pymysql://{self._settings.mysql_user}:{self._settings.mysql_password}@{self._settings.mysql_host}/{self._settings.mysql_database}'
-
-    def _reply_to_fill_message(self, message: Message, fill: FillDto) -> None:
-        reply_text = f'Принято {fill.amount}р. от @{message.from_user.username}'
+    @callback_query_handler(accepted_data=['show_category'])
+    def show_category(self, callback_query: CallbackQuery) -> None:
+        fill_id = int(callback_query.data.replace('show_category', ''))
+        fill = self.card_fill_service.get_fill_by_id(fill_id)
+        keyboard_buttons = []
+        for cat in self.card_fill_service.list_categories():
+            keyboard_buttons.append(
+                [InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')]
+            )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        reply_text = f'Выберите категорию для пополнения {fill.amount}р.'
         if fill.description:
-            reply_text += f': {fill.description}'
-        reply_text += f', категория: {fill.category_name}.'
-
-        change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
-
+            reply_text += f' ({fill.description})'
         self.send_message(
-            chat_id=message.chat.chat_id,
+            chat_id=callback_query.message.chat.chat_id,
             text=reply_text,
             reply_markup=keyboard
         )
 
-    @callback_query_handler(accepted_data=['show_category'])
-    def show_category(self, callback_query: CallbackQuery) -> None:
-        fill_id = callback_query.data.replace('show_category', '')
-        try:
-            db_session = self.DbSession()
-            fill = db_session.query(CardFill).get(fill_id)
-            keyboard_buttons = []
-            for cat in db_session.query(Category).all():
-                keyboard_buttons.append([InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')])
-            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-            reply_text = f'Выберите категорию для пополнения {fill.amount}р.'
-            if fill.description:
-                reply_text += f' ({fill.description})'
-            self.send_message(
-                chat_id=callback_query.message.chat.chat_id,
-                text=reply_text,
-                reply_markup=keyboard
-            )
-        finally:
-            self.DbSession.remove()
+    @callback_query_handler(accepted_data=['change_category'])
+    def change_category(self, callback_query: CallbackQuery) -> None:
+        category_code, fill_id = callback_query.data.replace('change_category', '').split('/')
+        fill_id = int(fill_id)
+        fill = self.card_fill_service.change_category_for_fill(fill_id, category_code)
 
-    def _reply_to_change_category_request(self, callback_query: CallbackQuery, fill: FillDto) -> None:
         reply_text = f'Категория пополнения {fill.amount}р.'
         if fill.description:
             reply_text += f' ({fill.description})'
@@ -140,171 +109,145 @@ class CardFillingBot(Bot):
             reply_markup=keyboard
         )
 
-    @callback_query_handler(accepted_data=['change_category'])
-    def change_category(self, callback_query: CallbackQuery) -> None:
-        category_code, fill_id = callback_query.data.replace('change_category', '').split('/')
-        db_session = self.DbSession()
+    def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
+        fill = parsed_message.data
         try:
-            fill = db_session.query(CardFill).get(int(fill_id))
-            old_category = fill.category
-            fill.category_code = category_code
-            self.logger.info(f'Changed category for fill {fill_id} to {category_code}')
-            # saving description as category alias if not defined
-            if old_category.code == 'OTHER' and fill.description:
-                category = db_session.query(Category).get(category_code)
-                category.add_alias(fill.description)
-                self.logger.info(f'Added alias {fill_dto.description} to category {category_code}')
-            db_session.commit()
-            fill_dto = FillDto(fill.fill_id, fill.amount, fill.description, fill.category.name)
-        finally:
-            self.DbSession.remove()
-        self._reply_to_change_category_request(callback_query, fill_dto)
+            fill = self.card_fill_service.handle_new_fill(fill)
+        except:
+            self.send_message(
+                chat_id=parsed_message.original_message.chat.chat_id,
+                text='Ошибка добавления пополнения.'
+            )
+            raise
 
-    def _reply_to_months_message(self, message: Message, months: List[Month]) -> None:
+        reply_text = f'Принято {fill.amount}р. от @{parsed_message.original_message.from_user.username}'
+        if fill.description:
+            reply_text += f': {fill.description}'
+        reply_text += f', категория: {fill.category_name}.'
+
+        change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
+
+        self.send_message(
+            chat_id=parsed_message.original_message.chat.chat_id,
+            text=reply_text,
+            reply_markup=keyboard
+        )
+
+    def handle_months_parsed_message(self, parsed_message: IParsedMessage[List[Month]]) -> None:
+        months = parsed_message.data
         months_numbers = ','.join([str(m.value) for m in months])
         my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
         stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
         total = InlineKeyboardButton(text='Сумма всех пополнений', callback_data='total')
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [total]])
         self.send_message(
-            chat_id=message.chat.chat_id,
-            text=f'Выбраны месяцы: {", ".join(map(months_names.get, months))}. Какая информация интересует?',
+            chat_id=parsed_message.original_message.chat.chat_id,
+            text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
             reply_markup=keyboard
-        )
-
-    def _reply_error(self, message: Message) -> None:
-        self.send_message(
-            chat_id=message.chat.chat_id,
-            text='Ошибка добавления суммы пополнения.'
         )
 
     @message_handler()
     def basic_message_handler(self, message: Message) -> None:
         if message.text:
-            self.logger.info(f'Parsing text {message.text}')
-            fill = FillMessageParser().parse(message.text).data
-            months = MonthMessageParser().parse(message.text).data
+            self.logger.info(f'Received message {message.text}')
+            fill_message = FillMessageParser().parse(message)
+            if fill_message:
+                self.logger.info(f'Found fill {fill_message.data}')
+                self.handle_fill_parsed_message(fill_message)
+                return
 
-            if fill:
-                self.logger.info(f'Found fill {fill}')
-                try:
-                    fill = self.card_fill_service.handle_new_fill(
-                        fill,
-                        from_user_id=message.from_user.user_id,
-                        fill_date=datetime.fromtimestamp(message.date)
-                    )
-                    self._reply_to_fill_message(message, fill)
-                except Exception:
-                    self._reply_error(message)
-                    raise
-            elif months:
-                self.logger.info(f'Found months {months}')
-                self._reply_to_months_message(message, months)
-            else:
-                self._reply_error(message)
+            months_message = MonthMessageParser().parse(message)
+            if months_message:
+                self.logger.info(f'Found months {months_message.data}')
+                self.handle_months_parsed_message(months_message)
+                return
 
-    def _reply_to_my_fills_request(
-        self,
-        callback_query: CallbackQuery,
-        from_user: TelegramUser,
-        months: List[Month],
-        fills: List[CardFill]
-    ) -> None:
-        m_names = ', '.join(map(months_names.get, months))
+    def _format_user_fills(self, fills: List[FillDto], from_user: UserDto, months: List[Month]) -> str:
+        m_names = ', '.join(map(month_names.get, months))
         if len(fills) == 0:
             text = f'Не было пополнений в {m_names}.'
         else:
             text = (
-                f'Пополнения @{from_user.username} за {m_names}:\n' +
-                '\n'.join([f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category.name}' for fill in fills])
+                    f'Пополнения @{from_user.username} за {m_names}:\n' +
+                    '\n'.join(
+                        [f'{fill.fill_date}: {fill.amount} {fill.description} {fill.category_name}' for fill in fills]
+                    )
             )
-        self.send_message(chat_id=callback_query.message.chat.chat_id, text=text)
-
-    def _create_new_user(self, telegramapi_user: TelegramApiUser, db_session: Any) -> TelegramUser:
-        self.logger.info(f'Creating new user {telegramapi_user}')
-        tg_user = TelegramUser(
-            user_id=telegramapi_user.user_id,
-            is_bot=telegramapi_user.is_bot,
-            first_name=telegramapi_user.first_name,
-            last_name=telegramapi_user.last_name,
-            username=telegramapi_user.username,
-            language_code=telegramapi_user.language_code
-        )
-        db_session.add(tg_user)
-        db_session.commit()
-        return tg_user
+        return text
 
     @callback_query_handler(accepted_data=['my'])
-    def my_fills(self, callback_query: CallbackQuery) -> None:
+    def my_fills_current_year(self, callback_query: CallbackQuery) -> None:
         months = [Month(int(val)) for val in callback_query.data.replace('my', '').split(',')]
+        year = datetime.now().year
+        from_user = UserDto.from_telegramapi(callback_query.from_user)
+        fills = self.card_fill_service.get_user_fills_in_months(from_user, months, year)
 
-        db_session = self.DbSession()
-        try:
-            from_user = db_session.query(TelegramUser).get(callback_query.from_user.user_id)
-            if not from_user:
-                from_user = self._create_new_user(callback_query.from_user, db_session)
-            m_values = [month.value for month in months]
-            filtered_fills = list(filter(lambda cf: cf.fill_date.month in m_values and cf.fill_date.year == datetime.now().year, from_user.card_fills))
-        finally:
-            self.DbSession.remove()
-        
-        self._reply_to_my_fills_request(callback_query, from_user, months, filtered_fills)
+        message_text = self._format_user_fills(fills, from_user, months)
+        months_numbers = ','.join([str(m.value) for m in months])
+        previous_year = InlineKeyboardButton(
+            text='Предыдущий год', callback_data=f'fills_previous_year{months_numbers}'
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
+        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, reply_markup=keyboard)
 
-    def _reply_to_per_month_request(self, callback_query: CallbackQuery, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> None:
+    @callback_query_handler(accepted_data=['fills_previous_year'])
+    def my_fills_previous_year(self, callback_query: CallbackQuery) -> None:
+        months = [Month(int(val)) for val in callback_query.data.replace('fills_previous_year', '').split(',')]
+        previous_year = datetime.now().year - 1
+        from_user = UserDto.from_telegramapi(callback_query.from_user)
+        fills = self.card_fill_service.get_user_fills_in_months(from_user, months, previous_year)
+        message_text = self._format_user_fills(fills, from_user, months)
+        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
+
+    def _format_monthly_report(self, data: Dict[Month, List[UserSumOverPeriodDto]], year: int) -> str:
         message_text = ''
         for month, monthly_data in data.items():
-            message_text = message_text + f'*{months_names[month]} {year}:*\n' + '\n'.join(f'@{user_sum_per_month.username}: {user_sum_per_month.amount}' for user_sum_per_month in monthly_data) + '\n\n'
+            message_text = (
+                    message_text
+                    + f'*{month_names[month]} {year}:*\n'
+                    + '\n'.join(
+                        f'@{user_sum_per_month.username}: {user_sum_per_month.amount}'
+                        for user_sum_per_month in monthly_data
+                    )
+                    + '\n\n'
+            )
         message_text = message_text.replace('_', '\\_').replace('.', '\\.')
-        if year == datetime.now().year:
-            # TODO: Here month numbers must be passed to callback data e.g. previous_year1,2 for jan and feb
-            previous_year = InlineKeyboardButton(text='Предыдущий год', callback_data='previous_year')
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
-            self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2, reply_markup=keyboard)
-        else:
-            self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text, parse_mode=ParseMode.MarkdownV2)
+        return message_text
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
         months = [Month(int(val)) for val in callback_query.data.replace('stat', '').split(',')]
-        self.per_month(callback_query, months)
+        year = datetime.now().year
+        data = self.card_fill_service.get_monthly_report(months, year)
+
+        message_text = self._format_monthly_report(data, year)
+        months_numbers = ','.join([str(m.value) for m in months])
+        previous_year = InlineKeyboardButton(text='Предыдущий год', callback_data=f'previous_year{months_numbers}')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
+
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=message_text,
+            parse_mode=ParseMode.MarkdownV2,
+            reply_markup=keyboard
+        )
 
     @callback_query_handler(accepted_data=['previous_year'])
     def per_month_previous_year(self, callback_query: CallbackQuery) -> None:
         months = [Month(int(val)) for val in callback_query.data.replace('previous_year', '').split(',')]
         previous_year = datetime.now().year - 1
-        self.per_month(callback_query, months, year=previous_year)
+        data = self.card_fill_service.get_monthly_report(months, previous_year)
 
-    def per_month(self, callback_query: CallbackQuery, months: List[Month], year: int = None) -> None:
-        year = year or datetime.now().year
-
-        db_session = self.DbSession()
-        try:
-            per_month_data: Dict[Month, List[UserSumOverPeriodDto]] = {}
-            for month in months:
-                res = db_session.execute(
-                    f'select username, amount from monthly_report where month_num = {month.value} and fill_year = {year}'
-                ).fetchall()
-                per_month_data[month] = [UserSumOverPeriodDto(*row) for row in res]
-        finally:
-            self.DbSession.remove()
-        
-        self._reply_to_per_month_request(callback_query, per_month_data, year=year)
-
-    def _reply_to_total_request(self, callback_query: CallbackQuery, data: List[UserSumOverPeriodDto]) -> None:
-        message_text = '\n'.join(f'@{user_sum_total.username}: {user_sum_total.amount}' for user_sum_total in data)
-        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
+        message_text = self._format_monthly_report(data, previous_year)
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=message_text,
+            parse_mode=ParseMode.MarkdownV2
+        )
 
     @callback_query_handler(accepted_data=['total'])
     def total(self, callback_query: CallbackQuery) -> None:
-        db_session = self.DbSession()
-        try:
-            query = db_session.query(
-                TelegramUser.username,
-                func.sum(CardFill.amount).label('total_amount')
-            ).join(CardFill).group_by(TelegramUser.username)
-            res = db_session.execute(query)
-            total_data = [UserSumOverPeriodDto(*row) for row in res]
-        finally:
-            self.DbSession.remove()
-
-        self._reply_to_total_request(callback_query, total_data)
+        data = self.card_fill_service.get_total_report()
+        message_text = '\n'.join(f'@{user_sum_total.username}: {user_sum_total.amount}' for user_sum_total in data)
+        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)

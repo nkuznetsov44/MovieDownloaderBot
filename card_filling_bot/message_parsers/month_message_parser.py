@@ -1,22 +1,8 @@
-from typing import Any, Optional, List
-from enum import Enum
+from typing import Optional, List
 import re
+from telegramapi.types import Message
+from dto.dto import Month
 from message_parsers import IMessageParser, IParsedMessage
-
-
-class Month(Enum):
-    january = 1
-    february = 2
-    march = 3
-    april = 4
-    may = 5
-    june = 6
-    july = 7
-    august = 8
-    september = 9
-    october = 10
-    november = 11
-    december = 12
 
 
 months_regexps = {
@@ -52,8 +38,9 @@ months_names = {
 
 
 class MonthMessageParser(IMessageParser[List[Month]]):
-    def parse(self, message_text: str) -> Optional[IParsedMessage[List[Month]]]:
+    def parse(self, message: Message) -> Optional[IParsedMessage[List[Month]]]:
         """Returns list of months on successful parse or None if no months were found."""
+        message_text = message.text
         results: List[Month] = []
         if message_text:
             for word in message_text.split(' '):
@@ -61,4 +48,4 @@ class MonthMessageParser(IMessageParser[List[Month]]):
                     result = re.search(months_regexps[month], word, re.IGNORECASE)
                     if result:
                         results.append(month)
-        return IParsedMessage(original_text=message_text, data=results) or None
+        return IParsedMessage(original_message=message, data=results) or None
