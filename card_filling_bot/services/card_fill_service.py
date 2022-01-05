@@ -162,10 +162,11 @@ class CardFillService:
         db_session = self.DbSession()
         try:
             query = db_session.execute(
-                'select cf.username, cat.name, sum(amount) as total_amount '
+                'select u.username, cat.name, sum(amount) as total_amount '
                 'from card_fill cf '
+                'join telegram_user u on cf.user_id = u.user_id'
                 'join category cat on cf.category_code = cat.code '
-                'group by cf.username, cat.name'
+                'group by u.username, cat.name'
             ).fetchall()
             res = db_session.execute(query)
             return UserSumOverPeriodDto.from_rows(res)
