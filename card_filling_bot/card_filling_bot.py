@@ -129,7 +129,8 @@ class CardFillingBot(Bot):
         months_numbers = ','.join([str(m.value) for m in months])
         my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
         stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat]])
+        yearly_stat = InlineKeyboardButton(text='С начала года', callback_data='yearly_stat')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [yearly_stat]])
         self.send_message(
             chat_id=parsed_message.original_message.chat.chat_id,
             text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
@@ -224,20 +225,26 @@ class CardFillingBot(Bot):
         previous_year = InlineKeyboardButton(text='Предыдущий год', callback_data=f'previous_year{months_numbers}')
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[previous_year]])
 
-        self.send_message(
-            chat_id=callback_query.message.chat.chat_id,
-            text=message_text,
-            parse_mode=ParseMode.MarkdownV2,
-            reply_markup=keyboard
-        )
-
         if len(months) == 1:
             month = months[0]
             diagram = self.graph_service.create_by_category_diagram(
                 data[month].by_category, name=f'{month_names[month]} {year}'
             )
             if diagram:
-                self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
+                self.send_photo(
+                    callback_query.message.chat.chat_id,
+                    photo=diagram,
+                    caption=message_text,
+                    parse_mode=ParseMode.MarkdownV2,
+                    reply_markup=keyboard
+                )
+                return
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=message_text,
+            parse_mode=ParseMode.MarkdownV2,
+            reply_markup=keyboard
+        )
 
     @callback_query_handler(accepted_data=['previous_year'])
     def per_month_previous_year(self, callback_query: CallbackQuery) -> None:
@@ -246,16 +253,36 @@ class CardFillingBot(Bot):
         data = self.card_fill_service.get_monthly_report(months, previous_year)
 
         message_text = self._format_monthly_report(data, previous_year)
-        self.send_message(
-            chat_id=callback_query.message.chat.chat_id,
-            text=message_text,
-            parse_mode=ParseMode.MarkdownV2
-        )
-
         if len(months) == 1:
             month = months[0]
             diagram = self.graph_service.create_by_category_diagram(
                 data[month].by_category, name=f'{month_names[month]} {previous_year}'
             )
             if diagram:
-                self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
+                self.send_photo(
+                    callback_query.message.chat.chat_id,
+                    photo=diagram,
+                    caption=message_text,
+                    parse_mode=ParseMode.MarkdownV2
+                )
+                return
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=message_text,
+            parse_mode=ParseMode.MarkdownV2
+        )
+
+    @callback_query_handler(accepted_data=['yearly_stat'])
+    def per_year(self, callback_query: CallbackQuery) -> None:
+        year = datetime.now().year
+        data = self.card_fill_service.get_yearly_report(year)
+        diagram = self.graph_service.create_by_category_diagram(data.by_category, name=str(year))
+        caption = (
+            f'*За {year} год:*\n'
+            + '\n'.join([f'@{user_data.username}: {user_data.amount:.0f}' for user_data in data.by_user])
+            + f'\n\n*Пропорции*\n  - текущая: {data.proportions.proportion_actual:.2f}\n'
+            + f'  - ожидаемая: {data.proportions.proportion_target:.2f}'
+        ).replace('_', '\\_').replace('-', '\\-').replace('.', '\\.')
+        self.send_photo(
+            callback_query.message.chat.chat_id, photo=diagram, caption=caption, parse_mode=ParseMode.MarkdownV2
+        )

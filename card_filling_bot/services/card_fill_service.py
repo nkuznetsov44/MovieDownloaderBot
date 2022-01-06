@@ -178,6 +178,10 @@ class CardFillService:
         finally:
             self.DbSession.remove()
 
+    @staticmethod
+    def _get_user_data(data: List[UserSumOverPeriodDto], username: str) -> Optional[UserSumOverPeriodDto]:
+        return next(filter(lambda user_data: user_data.username == username, data), None)
+
     def get_monthly_report(self, months: List[Month], year: int) -> Dict[Month, SummaryOverPeriodDto]:
         res: Dict[Month, SummaryOverPeriodDto] = {}
         by_user = self.get_monthly_report_by_user(months, year)
@@ -185,16 +189,8 @@ class CardFillService:
         for month in months:
             by_user_month = by_user[month]
             by_category_month = by_category[month]
-            minor_user_data = next(
-                filter(
-                    lambda user_data: user_data.username == self.minor_proportion_user.username, by_user_month
-                ), None
-            )
-            major_user_data = next(
-                filter(
-                    lambda user_data: user_data.username == self.major_proportion_user.username, by_user_month
-                ), None
-            )
+            minor_user_data = self._get_user_data(by_user_month, self.minor_proportion_user.username)
+            major_user_data = self._get_user_data(by_user_month, self.major_proportion_user.username)
             proportion_actual_month = self._calc_proportion_actual(minor_user_data, major_user_data)
             proportion_target_month = self._calc_proportion_target(by_category_month)
             proportions = ProportionOverPeriodDto(
@@ -241,6 +237,49 @@ class CardFillService:
                     lambda cf: cf.fill_date.month in month_numbers and cf.fill_date.year == year,
                     user_fills
                 )
+            )
+        finally:
+            self.DbSession.remove()
+
+    def get_yearly_report(self, year: int) -> SummaryOverPeriodDto:
+        db_session = self.DbSession()
+        try:
+            by_user_query = (
+                'select u.username, sum(cf.amount) as amount '
+                'from card_fill cf '
+                'join telegram_user u on cf.user_id = u.user_id '
+                f'where year(cf.fill_date) = {year} '
+                'group by u.username'
+            )
+            by_user_rows = db_session.execute(by_user_query).fetchall()
+            by_user: List[UserSumOverPeriodDto] = []
+            for row in by_user_rows:
+                by_user.append(UserSumOverPeriodDto(*row))
+
+            by_category_query = (
+                'select cat.name as category_name, sum(cf.amount) as amount, cat.proportion '
+                'from card_fill cf '
+                'join category cat on cf.category_code = cat.code '
+                f'where year(cf.fill_date) = {year} '
+                'group by cat.name, cat.proportion'
+            )
+            by_category_rows = db_session.execute(by_category_query).fetchall()
+            by_category: List[CategorySumOverPeriodDto] = []
+            for row in by_category_rows:
+                category_name, amount, proportion = row
+                by_category.append(CategorySumOverPeriodDto(category_name, amount, float(proportion)))
+
+            minor_user_data = self._get_user_data(by_user, self.minor_proportion_user.username)
+            major_user_data = self._get_user_data(by_user, self.major_proportion_user.username)
+
+            proportion_actual = self._calc_proportion_actual(minor_user_data, major_user_data)
+            proportion_target = self._calc_proportion_target(by_category)
+            proportions = ProportionOverPeriodDto(
+                proportion_actual=proportion_actual, proportion_target=proportion_target
+            )
+
+            return SummaryOverPeriodDto(
+                by_user=by_user, by_category=by_category, proportions=proportions
             )
         finally:
             self.DbSession.remove()
