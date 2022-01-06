@@ -1,15 +1,17 @@
-from typing import List, Dict, Tuple, TYPE_CHECKING
+from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from dto.dto import (
-    Month, FillDto, CategoryDto, UserDto, SummaryOverPeriodDto
+    Month, FillDto, CategoryDto, UserDto, SummaryOverPeriodDto, CategorySumOverPeriodDto
 )
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
+from io import BytesIO
+from matplotlib import pyplot as plt
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -194,23 +196,39 @@ class CardFillingBot(Bot):
         for month, data_month in data.items():
             message_text += f'*{month_names[month]} {year}:*\n'
             for user_sum_month in data_month.by_user:
-                message_text += f'@{user_sum_month.username}: {user_sum_month.amount}\n'
-            message_text += '\nКатегории:\n'
+                message_text += f'@{user_sum_month.username}: {user_sum_month.amount:.0f}\n'.replace('_', '\\_')
+            message_text += '\n_Категории:_\n'
             for category_sum_month in data_month.by_category:
-                message_text += f'  - {category_sum_month.category_name}: {category_sum_month.amount}\n'
+                message_text += f'  - {category_sum_month.category_name}: {category_sum_month.amount:.0f}\n'
             message_text += (
-                f'\nПропорции:\n  - текущая: {data_month.proportions.proportion_actual:.2f}\n'
+                f'\n_Пропорции:_\n  - текущая: {data_month.proportions.proportion_actual:.2f}\n'
                 f'  - ожидаемая: {data_month.proportions.proportion_target:.2f}\n\n'
             )
         message_text = (
             message_text
-            .replace('_', '\\_')
             .replace('.', '\\.')
             .replace('-', '\\-')
             .replace('(', '\\(')
             .replace(')', '\\)')
         )
         return message_text
+
+    @staticmethod
+    def _create_by_category_diagram(data: List[CategorySumOverPeriodDto], name: str) -> Optional[bytes]:
+        if not data:
+            return None
+        labels = [by_category.category_name for by_category in data]
+        data = [by_category.amount for by_category in data]
+        _, _, autotexts = plt.pie(data, labels=labels, autopct="")
+        for i, a in enumerate(autotexts):
+            a.set_text(f'{data[i]:.0f}')
+        plt.title(name)
+        buf = BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        bts = buf.read()
+        buf.close()
+        return bts
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
@@ -229,6 +247,12 @@ class CardFillingBot(Bot):
             parse_mode=ParseMode.MarkdownV2,
             reply_markup=keyboard
         )
+
+        if len(months) == 1:
+            month = months[0]
+            diagram = self._create_by_category_diagram(data[month].by_category, name=f'{month_names[month]}  {year}')
+            if diagram:
+                self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
 
     @callback_query_handler(accepted_data=['previous_year'])
     def per_month_previous_year(self, callback_query: CallbackQuery) -> None:

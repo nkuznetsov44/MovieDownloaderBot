@@ -276,7 +276,7 @@ class Bot(metaclass=BotMeta):
         disable_web_page_preview: Optional[bool] = None,
         disable_notification: Optional[bool] = None,
         reply_to_message_id: Optional[int] = None,
-        reply_markup: ReplyMarkup = None
+        reply_markup: Optional[ReplyMarkup] = None
     ) -> Message:
         params = {
             'chat_id': chat_id,
@@ -298,3 +298,27 @@ class Bot(metaclass=BotMeta):
             'action': action
         }
         return self._make_request('sendChatAction', params=params)
+
+    def send_photo(
+        self,
+        chat_id: ChatId,
+        photo: bytes,
+        caption: Optional[str] = None,
+        parse_mode: Optional[ParseMode] = None,
+        disable_notification: Optional[bool] = None,
+        reply_to_message_id: Optional[int] = None,
+        reply_markup: Optional[ReplyMarkup] = None
+    ) -> Message:
+        files = {'photo': photo}
+        params = {
+            'chat_id': chat_id,
+            'caption': caption,
+            'disable_notification': disable_notification,
+            'reply_to_message_id': reply_to_message_id,
+        }
+        if reply_markup:
+            params['reply_markup'] = reply_markup.to_json(allow_nan=False)
+        if parse_mode:
+            params['parse_mode'] = parse_mode.value
+        result = self._make_request('sendPhoto', http_method='post', params=params, files=files)
+        return Message.from_dict(result)
