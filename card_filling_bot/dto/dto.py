@@ -77,28 +77,23 @@ class UserDto:
 class UserSumOverPeriodDto:
     username: str
     amount: float
-    by_category: Optional[Dict[str, Tuple[float, float]]]  # category -> (amount, proportion)
-
-    @staticmethod
-    def from_rows(rows: List[Tuple[str, str, float, 'Decimal']]) -> List['UserSumOverPeriodDto']:
-        """[('kuznetsov_na', 'Ð´Ñ€ÑƒÐ³Ð¾Ðµ', 1000.0, 0.80), ('kuznetsov_na', 'ÐµÐ´Ð°', 102.0, 1.00)]"""
-        tmp: Dict[str, Dict[str, Tuple[float, float]]] = {}  # username -> (category -> (amount, proportion))
-        for username, category, amount, proportion in rows:
-            by_category = tmp.get(username)
-            if not by_category:
-                tmp[username] = by_category = {}
-            by_category[category] = (amount, float(proportion))
-
-        res: List['UserSumOverPeriodDto'] = []
-        for username, by_category in tmp.items():
-            # by_category: Dict[str, Tuple[float, float]] category -> (amount, proportion)
-            amount = sum([amount for amount, _ in by_category.values()])
-            res.append(UserSumOverPeriodDto(username, amount, by_category))
-        return res
 
     def __repr__(self):
         return (
-            f'UserSumOverPeriodDto<username: {self.username}, amount: {self.amount}, by_category: {self.by_category}>'
+            f'UserSumOverPeriodDto<username: {self.username}, amount: {self.amount}>'
+        )
+
+
+@dataclass
+class CategorySumOverPeriodDto:
+    category_name: str
+    amount: float
+    proportion: float
+
+    def __repr__(self) -> str:
+        return (
+            f'CategorySumOverPeriodDto<category_name: {self.category_name}, '
+            f'amount: {self.amount}, proportion: {self.proportion}>'
         )
 
 
@@ -106,3 +101,22 @@ class UserSumOverPeriodDto:
 class ProportionOverPeriodDto:
     proportion_target: Optional[float]
     proportion_actual: Optional[float]
+
+    def __repr__(self) -> str:
+        return (
+            f'ProportionOverPeriodDto<proportion_target: {self.proportion_target}, '
+            f'proportion_actual: {self.proportion_actual}>'
+        )
+
+
+@dataclass
+class SummaryOverPeriodDto:
+    by_user: List[UserSumOverPeriodDto]
+    by_category: List[CategorySumOverPeriodDto]
+    proportions: ProportionOverPeriodDto
+
+    def __repr__(self) -> str:
+        return (
+            f'SummaryOverPeriodDto<by_user: {self.by_user}, '
+            f'by_category: {self.by_category}, proportions: {self.proportions}>'
+        )

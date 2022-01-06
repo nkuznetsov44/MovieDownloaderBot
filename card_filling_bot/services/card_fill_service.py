@@ -1,11 +1,12 @@
-from typing import Any, List, Dict, Tuple, TYPE_CHECKING
+from typing import Any, Optional, List, Dict, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
-from collections import defaultdict
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from model import CardFill, Category, TelegramUser
-from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto, ProportionOverPeriodDto
-
+from dto.dto import (
+    Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto,
+    CategorySumOverPeriodDto, ProportionOverPeriodDto, SummaryOverPeriodDto
+)
 if TYPE_CHECKING:
     from datetime import datetime
     from logging import Logger
@@ -38,14 +39,6 @@ def fraction_to_proportion(fraction: float) -> float:
 
     """
     return fraction / (1 - fraction)
-
-
-def merge_dicts_sum(*dicts: Dict[Any, float]) -> Dict[Any, float]:
-    ret = defaultdict(float)
-    for d in dicts:
-        for k, v in d.items():
-            ret[k] += v
-    return dict(ret)
 
 
 class CardFillService:
@@ -139,69 +132,104 @@ class CardFillService:
         finally:
             self.DbSession.remove()
 
-    def get_monthly_report(
+    def get_monthly_report_by_category(
         self, months: List[Month], year: int
-    ) -> Dict[Month, Tuple[List[UserSumOverPeriodDto], ProportionOverPeriodDto]]:
+    ) -> Dict[Month, List[CategorySumOverPeriodDto]]:
         db_session = self.DbSession()
         try:
-            per_month_data: Dict[Month, Tuple[List[UserSumOverPeriodDto], ProportionOverPeriodDto]] = {}
+            data: Dict[Month, List[CategorySumOverPeriodDto]] = {}
+            query = (
+                'select month_num, category_name, amount, proportion '
+                'from monthly_report_by_category '
+                f'where month_num in ({",".join([str(m.value) for m in months])}) and fill_year = {year}'
+            )
+            rows = db_session.execute(query).fetchall()
             for month in months:
-                res = db_session.execute(
-                    'select username, category_name, amount, proportion from monthly_report_by_category '
-                    f'where month_num = {month.value} and fill_year = {year}'
-                ).fetchall()
-                sums_over_period = UserSumOverPeriodDto.from_rows(res)
-
-                try:
-                    minor_user_data = next(filter(
-                        lambda usop: usop.username == self.minor_proportion_user.username, sums_over_period
-                    ))
-                except StopIteration:
-                    minor_user_data = None
-
-                try:
-                    major_user_data = next(filter(
-                        lambda usop: usop.username == self.major_proportion_user.username, sums_over_period
-                    ))
-                except StopIteration:
-                    major_user_data = None
-
-                if minor_user_data is None or major_user_data is None:
-                    per_month_data[month] = (sums_over_period, ProportionOverPeriodDto(None, None))
-                else:
-                    proportion_actual = self._calc_proportion_actual(minor_user_data, major_user_data)
-                    proportion_target = self._calc_proportion_target(minor_user_data, major_user_data)
-                    per_month_data[month] = (
-                        sums_over_period, ProportionOverPeriodDto(proportion_target, proportion_actual)
-                    )
-
-            return per_month_data
+                rows_for_month = list(filter(lambda row: row[0] == month.value, rows))
+                data_for_month: List[CategorySumOverPeriodDto] = []
+                if rows_for_month:
+                    for _, category_name, amount, proportion in rows_for_month:
+                        data_for_month.append(CategorySumOverPeriodDto(category_name, amount, float(proportion)))
+                data[month] = data_for_month
+            return data
         finally:
             self.DbSession.remove()
 
-    @staticmethod
-    def _calc_proportion_actual(minor_user_data: UserSumOverPeriodDto, major_user_data: UserSumOverPeriodDto) -> float:
-        """fraction_actual = sum(categories for minor_user) / sum(total)"""
-        return fraction_to_proportion(minor_user_data.amount / (minor_user_data.amount + major_user_data.amount))
+    def get_monthly_report_by_user(
+        self, months: List[Month], year: int
+    ) -> Dict[Month, List[UserSumOverPeriodDto]]:
+        db_session = self.DbSession()
+        try:
+            data: Dict[Month, List[UserSumOverPeriodDto]] = {}
+            query = (
+                'select month_num, username, amount '
+                'from monthly_report_by_user '
+                f'where month_num in ({",".join([str(m.value) for m in months])}) and fill_year = {year}'
+            )
+            rows = db_session.execute(query).fetchall()
+            for month in months:
+                rows_for_month = list(filter(lambda row: row[0] == month.value, rows))
+                data_for_month: List[UserSumOverPeriodDto] = []
+                if rows_for_month:
+                    for _, username, amount in rows_for_month:
+                        data_for_month.append(UserSumOverPeriodDto(username, amount))
+                data[month] = data_for_month
+            return data
+        finally:
+            self.DbSession.remove()
+
+    def get_monthly_report(self, months: List[Month], year: int) -> Dict[Month, SummaryOverPeriodDto]:
+        res: Dict[Month, SummaryOverPeriodDto] = {}
+        by_user = self.get_monthly_report_by_user(months, year)
+        by_category = self.get_monthly_report_by_category(months, year)
+        for month in months:
+            by_user_month = by_user[month]
+            by_category_month = by_category[month]
+            minor_user_data = next(
+                filter(
+                    lambda user_data: user_data.username == self.minor_proportion_user.username, by_user_month
+                ), None
+            )
+            major_user_data = next(
+                filter(
+                    lambda user_data: user_data.username == self.major_proportion_user.username, by_user_month
+                ), None
+            )
+            proportion_actual_month = self._calc_proportion_actual(minor_user_data, major_user_data)
+            proportion_target_month = self._calc_proportion_target(by_category_month)
+            proportions = ProportionOverPeriodDto(
+                proportion_target=proportion_target_month, proportion_actual=proportion_actual_month
+            )
+            res[month] = SummaryOverPeriodDto(
+                by_user=by_user_month, by_category=by_category_month, proportions=proportions
+            )
+        return res
 
     @staticmethod
-    def _calc_proportion_target(minor_user_data: UserSumOverPeriodDto, major_user_data: UserSumOverPeriodDto) -> float:
-        """fraction_target = sum(category_i * fraction_i) / sum(category_i)"""
-        minor_user_by_category_weighted = {
-            category: amount * proportion_to_fraction(proportion)
-            for category, (amount, proportion) in minor_user_data.by_category.items()
-        }
-        major_user_by_category_weighted = {
-            category: amount * proportion_to_fraction(proportion)
-            for category, (amount, proportion) in major_user_data.by_category.items()
-        }
-        total_by_category_weighted = merge_dicts_sum(minor_user_by_category_weighted, major_user_by_category_weighted)
+    def _calc_proportion_actual(
+        minor_user_data: Optional[UserSumOverPeriodDto], major_user_data: Optional[UserSumOverPeriodDto]
+    ) -> float:
+        """Actual proportion is a current proportion between minor and major users.
+        Thus, proportion_actual = sum for minor_user / sum for major_user"""
+        if not minor_user_data:
+            return 0.0
+        if not major_user_data or major_user_data.amount == 0.0:
+            return float('nan')
+        return minor_user_data.amount / major_user_data.amount
 
-        minor_user_by_category = {category: amount for category, (amount, _) in minor_user_data.by_category.items()}
-        major_user_by_category = {category: amount for category, (amount, _) in major_user_data.by_category.items()}
-        total_by_category = merge_dicts_sum(minor_user_by_category, major_user_by_category)
-
-        return fraction_to_proportion(sum(total_by_category_weighted.values()) / sum(total_by_category.values()))
+    @staticmethod
+    def _calc_proportion_target(data_by_category: List[CategorySumOverPeriodDto]) -> float:
+        """Target proportion is calculated from target fraction.
+        Target fraction is the target part of total expense considering target fraction for each category.
+        Thus, fraction_target = sum(category_i * fraction_i) / sum(category_i)"""
+        weighted_amount = 0.0
+        total_amount = 0.0
+        for category_data in data_by_category:
+            weighted_amount += category_data.amount * proportion_to_fraction(category_data.proportion)
+            total_amount += category_data.amount
+        if total_amount == 0.0:
+            return float('nan')
+        return fraction_to_proportion(weighted_amount / total_amount)
 
     def get_user_fills_in_months(self, user: UserDto, months: List[Month], year: int) -> List[FillDto]:
         db_session = self.DbSession()
@@ -214,19 +242,5 @@ class CardFillService:
                     user_fills
                 )
             )
-        finally:
-            self.DbSession.remove()
-
-    def get_total_report(self) -> List[UserSumOverPeriodDto]:
-        db_session = self.DbSession()
-        try:
-            res = db_session.execute(
-                'select u.username, cat.name, sum(amount), cat.proportion as total_amount '
-                'from card_fill cf '
-                'join telegram_user u on cf.user_id = u.user_id '
-                'join category cat on cf.category_code = cat.code '
-                'group by u.username, cat.name, cat.proportion'
-            ).fetchall()
-            return UserSumOverPeriodDto.from_rows(res)
         finally:
             self.DbSession.remove()

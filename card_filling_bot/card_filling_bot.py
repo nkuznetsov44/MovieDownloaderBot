@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
-from dto.dto import Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto, ProportionOverPeriodDto
+from dto.dto import (
+    Month, FillDto, CategoryDto, UserDto, SummaryOverPeriodDto
+)
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
@@ -125,8 +127,7 @@ class CardFillingBot(Bot):
         months_numbers = ','.join([str(m.value) for m in months])
         my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
         stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
-        total = InlineKeyboardButton(text='Сумма всех пополнений', callback_data='total')
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [total]])
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat]])
         self.send_message(
             chat_id=parsed_message.original_message.chat.chat_id,
             text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
@@ -149,7 +150,8 @@ class CardFillingBot(Bot):
                 self.handle_months_parsed_message(months_message)
                 return
 
-    def _format_user_fills(self, fills: List[FillDto], from_user: UserDto, months: List[Month], year: int) -> str:
+    @staticmethod
+    def _format_user_fills(fills: List[FillDto], from_user: UserDto, months: List[Month], year: int) -> str:
         m_names = ', '.join(map(month_names.get, months))
         if len(fills) == 0:
             text = f'Не было пополнений в {m_names} {year}.'
@@ -186,23 +188,20 @@ class CardFillingBot(Bot):
         message_text = self._format_user_fills(fills, from_user, months, previous_year)
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
 
-    def _format_monthly_report(
-        self, data: Dict[Month, Tuple[List[UserSumOverPeriodDto], ProportionOverPeriodDto]], year: int
-    ) -> str:
+    @staticmethod
+    def _format_monthly_report(data: Dict[Month, SummaryOverPeriodDto], year: int) -> str:
         message_text = ''
-        for month, (monthly_data, proportion_data) in data.items():
+        for month, data_month in data.items():
             message_text += f'*{month_names[month]} {year}:*\n'
-            for user_sum_per_month in monthly_data:
-                message_text += f'@{user_sum_per_month.username}: {user_sum_per_month.amount}\n'
-                for category, (category_amount, category_proportion) in user_sum_per_month.by_category.items():
-                    message_text += f'  - {category}: {category_amount}\n'
-            message_text += '\n'
-            if proportion_data.proportion_target and proportion_data.proportion_actual:
-                message_text += (
-                    f'Пропорции\n  - текущая: {proportion_data.proportion_actual:.2f}\n'
-                    f'  - ожидаемая: {proportion_data.proportion_target:.2f}\n'
-                )
-            message_text += '\n'
+            for user_sum_month in data_month.by_user:
+                message_text += f'@{user_sum_month.username}: {user_sum_month.amount}\n'
+            message_text += '\nКатегории:\n'
+            for category_sum_month in data_month.by_category:
+                message_text += f'  - {category_sum_month.category_name}: {category_sum_month.amount}\n'
+            message_text += (
+                f'\nПропорции:\n  - текущая: {data_month.proportions.proportion_actual:.2f}\n'
+                f'  - ожидаемая: {data_month.proportions.proportion_target:.2f}\n\n'
+            )
         message_text = (
             message_text
             .replace('_', '\\_')
@@ -243,9 +242,3 @@ class CardFillingBot(Bot):
             text=message_text,
             parse_mode=ParseMode.MarkdownV2
         )
-
-    @callback_query_handler(accepted_data=['total'])
-    def total(self, callback_query: CallbackQuery) -> None:
-        data = self.card_fill_service.get_total_report()
-        message_text = '\n'.join(f'@{user_sum_total.username}: {user_sum_total.amount}' for user_sum_total in data)
-        self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
