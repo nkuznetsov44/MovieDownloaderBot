@@ -10,8 +10,7 @@ from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
-from io import BytesIO
-from matplotlib import pyplot as plt
+from services.graph_service import GraphService
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -58,6 +57,7 @@ class CardFillingBot(Bot):
             logger=settings.logger,
         )
         self.card_fill_service = CardFillService(card_fill_service_settings)
+        self.graph_service = GraphService()
 
     @callback_query_handler(accepted_data=['show_category'])
     def show_category(self, callback_query: CallbackQuery) -> None:
@@ -213,23 +213,6 @@ class CardFillingBot(Bot):
         )
         return message_text
 
-    @staticmethod
-    def _create_by_category_diagram(data: List[CategorySumOverPeriodDto], name: str) -> Optional[bytes]:
-        if not data:
-            return None
-        labels = [by_category.category_name for by_category in data]
-        data = [by_category.amount for by_category in data]
-        _, _, autotexts = plt.pie(data, labels=labels, autopct="")
-        for i, a in enumerate(autotexts):
-            a.set_text(f'{data[i]:.0f}')
-        plt.title(name)
-        buf = BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        bts = buf.read()
-        buf.close()
-        return bts
-
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
         months = [Month(int(val)) for val in callback_query.data.replace('stat', '').split(',')]
@@ -250,7 +233,9 @@ class CardFillingBot(Bot):
 
         if len(months) == 1:
             month = months[0]
-            diagram = self._create_by_category_diagram(data[month].by_category, name=f'{month_names[month]}  {year}')
+            diagram = self.graph_service.create_by_category_diagram(
+                data[month].by_category, name=f'{month_names[month]} {year}'
+            )
             if diagram:
                 self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
 
@@ -269,8 +254,8 @@ class CardFillingBot(Bot):
 
         if len(months) == 1:
             month = months[0]
-            diagram = self._create_by_category_diagram(
-                data[month].by_category, name=f'{month_names[month]}  {previous_year}'
+            diagram = self.graph_service.create_by_category_diagram(
+                data[month].by_category, name=f'{month_names[month]} {previous_year}'
             )
             if diagram:
                 self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
