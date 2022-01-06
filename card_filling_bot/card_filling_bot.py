@@ -266,3 +266,11 @@ class CardFillingBot(Bot):
             text=message_text,
             parse_mode=ParseMode.MarkdownV2
         )
+
+        if len(months) == 1:
+            month = months[0]
+            diagram = self._create_by_category_diagram(
+                data[month].by_category, name=f'{month_names[month]}  {previous_year}'
+            )
+            if diagram:
+                self.send_photo(callback_query.message.chat.chat_id, photo=diagram)
