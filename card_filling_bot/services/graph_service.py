@@ -1,7 +1,7 @@
 from typing import List, Optional
 from io import BytesIO
 from matplotlib import pyplot as plt
-from dto.dto import CategorySumOverPeriodDto
+from dto import CategorySumOverPeriodDto
 
 
 class GraphService:

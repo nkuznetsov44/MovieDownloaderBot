@@ -19,13 +19,16 @@ class CardFill(Base):
     description = Column('description', String, nullable=True)
     category_code = Column(String, ForeignKey('category.code'))
     category = relationship('Category', back_populates='card_fills', lazy='subquery')
+    fill_scope = Column(Integer, ForeignKey('fill_scope.scope_id'))
+    scope = relationship('FillScope', back_populates='card_fills', lazy='subquery')
 
     def __repr__(self) -> str:
         return (
             f'{super().__repr__()}: '
             f'<"fill_id": {self.fill_id}, "user": {self.user}, '
             f'"fill_date": {self.fill_date}, "amount": {self.amount}, '
-            f'"description": {self.description}, "category": {self.category}>'
+            f'"description": {self.description}, "category": {self.category},'
+            f'"scope": {self.scope}>'
         )
 
 
@@ -72,3 +75,24 @@ class Category(Base):
             return False
         aliases_re = [re.compile(alias, re.IGNORECASE) for alias in self.get_aliases()]
         return any(pattern.match(fill_description) for pattern in aliases_re)
+
+    def __repr__(self) -> str:
+        return (
+            f'{super().__repr__()}: '
+            f'<"code": {self.code}, "name": {self.name}, "proportion": {self.proportion}>'
+        )
+
+
+class FillScope(Base):
+    __tablename__ = 'fill_scope'
+
+    scope_id = Column('scope_id', Integer, primary_key=True)
+    scope_type = Column('scope_type', String)
+    chat_id = Column('chat_id', Integer)
+    card_fills = relationship('CardFill')
+
+    def __repr__(self) -> str:
+        return (
+            f'{super().__repr__()}: '
+            f'<"scope_id": {self.scope_id}, "scope_type": {self.scope_type}, "chat_id": {self.chat_id}>'
+        )

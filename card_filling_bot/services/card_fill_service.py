@@ -1,11 +1,12 @@
-from typing import Any, Optional, List, Dict, Tuple, TYPE_CHECKING
+from typing import Optional, List, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from model import CardFill, Category, TelegramUser
-from dto.dto import (
+from model import CardFill, Category, TelegramUser, FillScope
+from dto import (
     Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto,
-    CategorySumOverPeriodDto, ProportionOverPeriodDto, SummaryOverPeriodDto
+    CategorySumOverPeriodDto, ProportionOverPeriodDto, SummaryOverPeriodDto,
+    FillScopeDto
 )
 if TYPE_CHECKING:
     from datetime import datetime
@@ -61,18 +62,28 @@ class CardFillService:
         finally:
             self.DbSession.remove()
 
-    def handle_new_fill(self, fill: FillDto, from_user: UserDto) -> FillDto:
+    def get_scope(self, chat_id: int) -> FillScopeDto:
+        self.logger.info(f'Trying to get scope for chat id {chat_id}')
         db_session = self.DbSession()
         try:
-            user = db_session.query(TelegramUser).get(from_user.id)
+            scope = db_session.query(FillScope).filter(FillScope.chat_id == chat_id).one_or_none()
+            self.logger.info(f'Got scope {scope}')
+            return FillScopeDto.from_model(scope)
+        finally:
+            self.DbSession.remove()
+
+    def handle_new_fill(self, fill: FillDto) -> FillDto:
+        db_session = self.DbSession()
+        try:
+            user = db_session.query(TelegramUser).get(fill.user.id)
             if not user:
                 new_user = TelegramUser(
-                    user_id=from_user.id,
-                    is_bot=from_user.is_bot,
-                    first_name=from_user.first_name,
-                    last_name=from_user.last_name,
-                    username=from_user.username,
-                    language_code=from_user.language_code,
+                    user_id=fill.user.id,
+                    is_bot=fill.user.is_bot,
+                    first_name=fill.user.first_name,
+                    last_name=fill.user.last_name,
+                    username=fill.user.username,
+                    language_code=fill.user.language_code,
                 )
                 db_session.add(new_user)
                 user = new_user
@@ -85,14 +96,15 @@ class CardFillService:
                 )
             except StopIteration:
                 pass
-            fill.category_name = fill_category.name
+            fill.category = CategoryDto.from_model(fill_category)
 
             card_fill = CardFill(
                 user_id=user.user_id,
                 fill_date=fill.fill_date,
-                amount=float(fill.amount),
+                amount=fill.amount,
                 description=fill.description,
                 category_code=fill_category.code,
+                fill_scope=fill.scope.scope_id,
             )
             db_session.add(card_fill)
             db_session.commit()
@@ -112,7 +124,7 @@ class CardFillService:
     def list_categories(self) -> List[CategoryDto]:
         db_session = self.DbSession()
         try:
-            return [CategoryDto(cat.code, cat.name, cat.get_aliases()) for cat in db_session.query(Category).all()]
+            return [CategoryDto.from_model(cat) for cat in db_session.query(Category).all()]
         finally:
             self.DbSession.remove()
 
@@ -133,7 +145,7 @@ class CardFillService:
             self.DbSession.remove()
 
     def get_monthly_report_by_category(
-        self, months: List[Month], year: int
+        self, months: List[Month], year: int, scope: FillScopeDto
     ) -> Dict[Month, List[CategorySumOverPeriodDto]]:
         db_session = self.DbSession()
         try:
@@ -141,7 +153,9 @@ class CardFillService:
             query = (
                 'select month_num, category_name, amount, proportion '
                 'from monthly_report_by_category '
-                f'where month_num in ({",".join([str(m.value) for m in months])}) and fill_year = {year}'
+                f'where month_num in ({",".join([str(m.value) for m in months])}) '
+                f'and fill_year = {year} '
+                f'and fill_scope = {scope.scope_id}'
             )
             rows = db_session.execute(query).fetchall()
             for month in months:
@@ -156,7 +170,7 @@ class CardFillService:
             self.DbSession.remove()
 
     def get_monthly_report_by_user(
-        self, months: List[Month], year: int
+        self, months: List[Month], year: int, scope: FillScopeDto
     ) -> Dict[Month, List[UserSumOverPeriodDto]]:
         db_session = self.DbSession()
         try:
@@ -164,7 +178,9 @@ class CardFillService:
             query = (
                 'select month_num, username, amount '
                 'from monthly_report_by_user '
-                f'where month_num in ({",".join([str(m.value) for m in months])}) and fill_year = {year}'
+                f'where month_num in ({",".join([str(m.value) for m in months])}) '
+                f'and fill_year = {year} '
+                f'and fill_scope = {scope.scope_id}'
             )
             rows = db_session.execute(query).fetchall()
             for month in months:
@@ -182,10 +198,12 @@ class CardFillService:
     def _get_user_data(data: List[UserSumOverPeriodDto], username: str) -> Optional[UserSumOverPeriodDto]:
         return next(filter(lambda user_data: user_data.username == username, data), None)
 
-    def get_monthly_report(self, months: List[Month], year: int) -> Dict[Month, SummaryOverPeriodDto]:
+    def get_monthly_report(
+        self, months: List[Month], year: int, scope: FillScopeDto
+    ) -> Dict[Month, SummaryOverPeriodDto]:
         res: Dict[Month, SummaryOverPeriodDto] = {}
-        by_user = self.get_monthly_report_by_user(months, year)
-        by_category = self.get_monthly_report_by_category(months, year)
+        by_user = self.get_monthly_report_by_user(months, year, scope)
+        by_category = self.get_monthly_report_by_category(months, year, scope)
         for month in months:
             by_user_month = by_user[month]
             by_category_month = by_category[month]
@@ -227,28 +245,34 @@ class CardFillService:
             return float('nan')
         return fraction_to_proportion(weighted_amount / total_amount)
 
-    def get_user_fills_in_months(self, user: UserDto, months: List[Month], year: int) -> List[FillDto]:
+    def get_user_fills_in_months(
+        self, user: UserDto, months: List[Month], year: int, scope: FillScopeDto
+    ) -> List[FillDto]:
         db_session = self.DbSession()
         try:
             user_fills = [FillDto.from_model(fill) for fill in db_session.query(TelegramUser).get(user.id).card_fills]
             month_numbers = [month.value for month in months]
             return list(
                 filter(
-                    lambda cf: cf.fill_date.month in month_numbers and cf.fill_date.year == year,
+                    lambda cf: (
+                        cf.fill_date.month in month_numbers
+                        and cf.fill_date.year == year
+                        and cf.scope.scope_id == scope.scope_id
+                    ),
                     user_fills
                 )
             )
         finally:
             self.DbSession.remove()
 
-    def get_yearly_report(self, year: int) -> SummaryOverPeriodDto:
+    def get_yearly_report(self, year: int, scope: FillScopeDto) -> SummaryOverPeriodDto:
         db_session = self.DbSession()
         try:
             by_user_query = (
                 'select u.username, sum(cf.amount) as amount '
                 'from card_fill cf '
                 'join telegram_user u on cf.user_id = u.user_id '
-                f'where year(cf.fill_date) = {year} '
+                f'where year(cf.fill_date) = {year} and cf.fill_scope = {scope.scope_id} '
                 'group by u.username'
             )
             by_user_rows = db_session.execute(by_user_query).fetchall()
@@ -260,7 +284,7 @@ class CardFillService:
                 'select cat.name as category_name, sum(cf.amount) as amount, cat.proportion '
                 'from card_fill cf '
                 'join category cat on cf.category_code = cat.code '
-                f'where year(cf.fill_date) = {year} '
+                f'where year(cf.fill_date) = {year} and cf.fill_scope = {scope.scope_id} '
                 'group by cat.name, cat.proportion'
             )
             by_category_rows = db_session.execute(by_category_query).fetchall()

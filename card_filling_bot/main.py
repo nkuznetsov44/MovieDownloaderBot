@@ -37,6 +37,7 @@ app.logger.info(webhook_info)
 need_reset_webhook = NEED_RESET_WEBHOOK or not webhook_info.url or webhook_info.url != WEBHOOK_URL
 
 if need_reset_webhook:
+    app.logger.info('Reseting webhook')
     if webhook_info.url:
         bot.delete_webhook()
     bot.set_webhook(url=WEBHOOK_URL)

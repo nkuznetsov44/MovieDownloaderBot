@@ -1,8 +1,8 @@
-from typing import Optional, List, Dict, Tuple, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from telegramapi.types import User as TelegramapiUser
-from model import CardFill
+from model import CardFill, FillScope, TelegramUser, Category
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -25,23 +25,17 @@ class Month(Enum):
 
 
 @dataclass
-class FillDto:
-    id: Optional[int]
-    user_id: int
-    fill_date: 'datetime'
-    amount: str
-    description: Optional[str]
-    category_name: Optional[str]
+class FillScopeDto:
+    scope_id: Optional[int]
+    scope_type: str
+    chat_id: int
 
     @staticmethod
-    def from_model(fill: CardFill) -> 'FillDto':
-        return FillDto(
-            id=fill.fill_id,
-            user_id=fill.user_id,
-            fill_date=fill.fill_date,
-            amount=fill.amount,
-            description=fill.description,
-            category_name=fill.category.name
+    def from_model(scope: FillScope) -> 'FillScope':
+        return FillScopeDto(
+            scope_id=scope.scope_id,
+            scope_type=scope.scope_type,
+            chat_id=scope.chat_id
         )
 
 
@@ -50,6 +44,14 @@ class CategoryDto:
     code: str
     name: str
     aliases: List[str]
+
+    @staticmethod
+    def from_model(category: Category) -> 'CategoryDto':
+        return CategoryDto(
+            code=category.code,
+            name=category.name,
+            aliases=category.get_aliases()
+        )
 
 
 @dataclass
@@ -72,16 +74,45 @@ class UserDto:
             language_code=telegramapi_user.language_code
         )
 
+    @staticmethod
+    def from_model(user: TelegramUser) -> 'UserDto':
+        return UserDto(
+            id=user.user_id,
+            is_bot=user.is_bot,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username,
+            language_code=user.language_code
+        )
+
+
+@dataclass
+class FillDto:
+    id: Optional[int]
+    user: UserDto
+    fill_date: 'datetime'
+    amount: str
+    description: Optional[str]
+    category: Optional[CategoryDto]
+    scope: FillScopeDto
+
+    @staticmethod
+    def from_model(fill: CardFill) -> 'FillDto':
+        return FillDto(
+            id=fill.fill_id,
+            user=UserDto.from_model(fill.user),
+            fill_date=fill.fill_date,
+            amount=fill.amount,
+            description=fill.description,
+            category=CategoryDto.from_model(fill.category),
+            scope=FillScopeDto.from_model(fill.scope)
+        )
+
 
 @dataclass
 class UserSumOverPeriodDto:
     username: str
     amount: float
-
-    def __repr__(self):
-        return (
-            f'UserSumOverPeriodDto<username: {self.username}, amount: {self.amount}>'
-        )
 
 
 @dataclass
@@ -90,23 +121,11 @@ class CategorySumOverPeriodDto:
     amount: float
     proportion: float
 
-    def __repr__(self) -> str:
-        return (
-            f'CategorySumOverPeriodDto<category_name: {self.category_name}, '
-            f'amount: {self.amount}, proportion: {self.proportion}>'
-        )
-
 
 @dataclass
 class ProportionOverPeriodDto:
     proportion_target: Optional[float]
     proportion_actual: Optional[float]
-
-    def __repr__(self) -> str:
-        return (
-            f'ProportionOverPeriodDto<proportion_target: {self.proportion_target}, '
-            f'proportion_actual: {self.proportion_actual}>'
-        )
 
 
 @dataclass
@@ -114,9 +133,3 @@ class SummaryOverPeriodDto:
     by_user: List[UserSumOverPeriodDto]
     by_category: List[CategorySumOverPeriodDto]
     proportions: ProportionOverPeriodDto
-
-    def __repr__(self) -> str:
-        return (
-            f'SummaryOverPeriodDto<by_user: {self.by_user}, '
-            f'by_category: {self.by_category}, proportions: {self.proportions}>'
-        )

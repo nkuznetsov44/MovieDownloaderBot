@@ -1,7 +1,7 @@
 from typing import Optional, List
 import re
 from telegramapi.types import Message
-from dto.dto import Month
+from dto import Month
 from message_parsers import IMessageParser, IParsedMessage
 
 
