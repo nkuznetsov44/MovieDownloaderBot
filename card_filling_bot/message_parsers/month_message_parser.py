@@ -48,4 +48,6 @@ class MonthMessageParser(IMessageParser[List[Month]]):
                     result = re.search(months_regexps[month], word, re.IGNORECASE)
                     if result:
                         results.append(month)
-        return IParsedMessage(original_message=message, data=results) or None
+        if results:
+            return IParsedMessage(original_message=message, data=results)
+        return None

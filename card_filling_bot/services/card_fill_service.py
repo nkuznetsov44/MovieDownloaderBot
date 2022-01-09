@@ -2,11 +2,11 @@ from typing import Optional, List, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from model import CardFill, Category, TelegramUser, FillScope
+from model import CardFill, Category, TelegramUser, FillScope, Budget
 from dto import (
     Month, FillDto, CategoryDto, UserDto, UserSumOverPeriodDto,
     CategorySumOverPeriodDto, ProportionOverPeriodDto, SummaryOverPeriodDto,
-    FillScopeDto
+    FillScopeDto, BudgetDto
 )
 if TYPE_CHECKING:
     from datetime import datetime
@@ -151,7 +151,7 @@ class CardFillService:
         try:
             data: Dict[Month, List[CategorySumOverPeriodDto]] = {}
             query = (
-                'select month_num, category_name, amount, proportion '
+                'select month_num, category_name, amount, proportion, monthly_limit '
                 'from monthly_report_by_category '
                 f'where month_num in ({",".join([str(m.value) for m in months])}) '
                 f'and fill_year = {year} '
@@ -162,8 +162,10 @@ class CardFillService:
                 rows_for_month = list(filter(lambda row: row[0] == month.value, rows))
                 data_for_month: List[CategorySumOverPeriodDto] = []
                 if rows_for_month:
-                    for _, category_name, amount, proportion in rows_for_month:
-                        data_for_month.append(CategorySumOverPeriodDto(category_name, amount, float(proportion)))
+                    for _, category_name, amount, proportion, monthly_limit in rows_for_month:
+                        data_for_month.append(
+                            CategorySumOverPeriodDto(category_name, amount, float(proportion), monthly_limit)
+                        )
                 data[month] = data_for_month
             return data
         finally:
@@ -291,7 +293,7 @@ class CardFillService:
             by_category: List[CategorySumOverPeriodDto] = []
             for row in by_category_rows:
                 category_name, amount, proportion = row
-                by_category.append(CategorySumOverPeriodDto(category_name, amount, float(proportion)))
+                by_category.append(CategorySumOverPeriodDto(category_name, amount, float(proportion), None))
 
             minor_user_data = self._get_user_data(by_user, self.minor_proportion_user.username)
             major_user_data = self._get_user_data(by_user, self.major_proportion_user.username)
@@ -305,5 +307,24 @@ class CardFillService:
             return SummaryOverPeriodDto(
                 by_user=by_user, by_category=by_category, proportions=proportions
             )
+        finally:
+            self.DbSession.remove()
+
+    def get_monthly_limit_for_category(self, category: CategoryDto, scope: FillScopeDto) -> Optional[BudgetDto]:
+        db_session = self.DbSession()
+        try:
+            budget = (
+                db_session.query(Budget)
+                .filter(
+                    Budget.category_code == category.code
+                )
+                .filter(
+                    Budget.fill_scope == scope.scope_id
+                )
+                .one_or_none()
+            )
+            if budget:
+                return BudgetDto.from_model(budget)
+            return None
         finally:
             self.DbSession.remove()

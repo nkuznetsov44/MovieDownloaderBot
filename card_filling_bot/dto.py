@@ -2,7 +2,7 @@ from typing import Optional, List, TYPE_CHECKING
 from dataclasses import dataclass
 from enum import Enum
 from telegramapi.types import User as TelegramapiUser
-from model import CardFill, FillScope, TelegramUser, Category
+from model import CardFill, FillScope, TelegramUser, Category, Budget
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -110,6 +110,23 @@ class FillDto:
 
 
 @dataclass
+class BudgetDto:
+    id: int
+    scope: FillScopeDto
+    category: CategoryDto
+    monthly_limit: float
+
+    @staticmethod
+    def from_model(budget: Budget) -> 'BudgetDto':
+        return Budget(
+            id=budget.id,
+            scope=FillScopeDto.from_model(budget.scope),
+            category=CategoryDto.from_model(budget.category),
+            monthly_limit=budget.monthly_limit
+        )
+
+
+@dataclass
 class UserSumOverPeriodDto:
     username: str
     amount: float
@@ -120,6 +137,7 @@ class CategorySumOverPeriodDto:
     category_name: str
     amount: float
     proportion: float
+    monthly_limit: Optional[float]
 
 
 @dataclass

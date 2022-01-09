@@ -4,7 +4,9 @@ from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
 from telegramapi.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from dto import (
-    Month, FillDto, CategoryDto, UserDto, SummaryOverPeriodDto, CategorySumOverPeriodDto, FillScopeDto
+    Month, FillDto, CategoryDto, UserDto, SummaryOverPeriodDto,
+    CategorySumOverPeriodDto, UserSumOverPeriodDto, FillScopeDto,
+    ProportionOverPeriodDto
 )
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
@@ -59,16 +61,84 @@ class CardFillingBot(Bot):
         self.card_fill_service = CardFillService(card_fill_service_settings)
         self.graph_service = GraphService()
 
+    @message_handler()
+    def basic_message_handler(self, message: Message) -> None:
+        if message.text:
+            self.logger.info(f'Received message {message.text}')
+            fill_message = FillMessageParser(self.card_fill_service).parse(message)
+            if fill_message:
+                self.logger.info(f'Found fill {fill_message.data}')
+                self.handle_fill_parsed_message(fill_message)
+                return
+
+            months_message = MonthMessageParser().parse(message)
+            if months_message:
+                self.logger.info(f'Found months {months_message.data}')
+                self.handle_months_parsed_message(months_message)
+                return
+        self.handle_message_fallback(message)
+
+    def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
+        fill = parsed_message.data
+        try:
+            fill = self.card_fill_service.handle_new_fill(fill)
+            reply_text = f'Принято {fill.amount}р. от @{fill.user.username}'
+            if fill.description:
+                reply_text += f': {fill.description}'
+            reply_text += f', категория: {fill.category.name}.'
+            change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
+            self.send_message(
+                chat_id=parsed_message.original_message.chat.chat_id,
+                text=reply_text,
+                reply_markup=keyboard
+            )
+        except:
+            self.send_message(
+                chat_id=parsed_message.original_message.chat.chat_id,
+                text='Ошибка добавления пополнения.'
+            )
+            raise
+
+    def handle_months_parsed_message(self, parsed_message: IParsedMessage[List[Month]]) -> None:
+        months = parsed_message.data
+        months_numbers = ','.join([str(m.value) for m in months])
+        my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
+        stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
+        yearly_stat = InlineKeyboardButton(text='С начала года', callback_data='yearly_stat')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [yearly_stat]])
+        self.send_message(
+            chat_id=parsed_message.original_message.chat.chat_id,
+            text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
+            reply_markup=keyboard
+        )
+
+    def handle_message_fallback(self, message: Message) -> None:
+        self.send_message(
+            chat_id=message.chat.chat_id,
+            text=(
+                'Укажите сумму и комментарий в сообщении, например: "150 макдак", для добавления новой записи,'
+                'или один или несколько месяцев, например, "январь февраль", для просмотра статистики.'
+            )
+        )
+
     @callback_query_handler(accepted_data=['show_category'])
     def show_category(self, callback_query: CallbackQuery) -> None:
         fill_id = int(callback_query.data.replace('show_category', ''))
         fill = self.card_fill_service.get_fill_by_id(fill_id)
+        categories = self.card_fill_service.list_categories()
+
         keyboard_buttons = []
-        for cat in self.card_fill_service.list_categories():
-            keyboard_buttons.append(
-                [InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')]
-            )
+        buttons_per_row = 2
+        for i in range (0, len(categories), buttons_per_row):
+            buttons_group = []
+            for cat in categories[i:i + buttons_per_row]:
+                buttons_group.append(
+                    InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')
+                )
+            keyboard_buttons.append(buttons_group)
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
         reply_text = f'Выберите категорию для пополнения {fill.amount} р.'
         if fill.description:
             reply_text += f' ({fill.description})'
@@ -97,60 +167,6 @@ class CardFillingBot(Bot):
             text=reply_text,
             reply_markup=keyboard
         )
-
-    def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
-        fill = parsed_message.data
-        try:
-            fill = self.card_fill_service.handle_new_fill(fill)
-        except:
-            self.send_message(
-                chat_id=parsed_message.original_message.chat.chat_id,
-                text='Ошибка добавления пополнения.'
-            )
-            raise
-
-        reply_text = f'Принято {fill.amount}р. от @{fill.user.username}'
-        if fill.description:
-            reply_text += f': {fill.description}'
-        reply_text += f', категория: {fill.category.name}.'
-
-        change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
-
-        self.send_message(
-            chat_id=parsed_message.original_message.chat.chat_id,
-            text=reply_text,
-            reply_markup=keyboard
-        )
-
-    def handle_months_parsed_message(self, parsed_message: IParsedMessage[List[Month]]) -> None:
-        months = parsed_message.data
-        months_numbers = ','.join([str(m.value) for m in months])
-        my = InlineKeyboardButton(text='Мои пополнения', callback_data=f'my{months_numbers}')
-        stat = InlineKeyboardButton(text='Отчет за месяцы', callback_data=f'stat{months_numbers}')
-        yearly_stat = InlineKeyboardButton(text='С начала года', callback_data='yearly_stat')
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[my], [stat], [yearly_stat]])
-        self.send_message(
-            chat_id=parsed_message.original_message.chat.chat_id,
-            text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
-            reply_markup=keyboard
-        )
-
-    @message_handler()
-    def basic_message_handler(self, message: Message) -> None:
-        if message.text:
-            self.logger.info(f'Received message {message.text}')
-            fill_message = FillMessageParser(self.card_fill_service).parse(message)
-            if fill_message:
-                self.logger.info(f'Found fill {fill_message.data}')
-                self.handle_fill_parsed_message(fill_message)
-                return
-
-            months_message = MonthMessageParser().parse(message)
-            if months_message:
-                self.logger.info(f'Found months {months_message.data}')
-                self.handle_months_parsed_message(months_message)
-                return
 
     @staticmethod
     def _format_user_fills(fills: List[FillDto], from_user: UserDto, months: List[Month], year: int) -> str:
@@ -192,29 +208,44 @@ class CardFillingBot(Bot):
         message_text = self._format_user_fills(fills, from_user, months, previous_year)
         self.send_message(chat_id=callback_query.message.chat.chat_id, text=message_text)
 
-    @staticmethod
-    def _format_monthly_report(data: Dict[Month, SummaryOverPeriodDto], year: int, scope: FillScopeDto) -> str:
+    def _format_by_user_block(self, data: List[UserSumOverPeriodDto], scope: FillScopeDto) -> str:
+        if scope.scope_type == 'PRIVATE':
+            return '\n'.join([f'{user_sum.amount:.0f}' for user_sum in data])
+        return (
+            '\n'.join([f'@{user_sum.username}: {user_sum.amount:.0f}' for user_sum in data])
+            .replace('_', '\\_')
+        )
+
+    def _format_by_category_block(self, data: List[CategorySumOverPeriodDto], display_limits: bool) -> str:
+        rows = []
+        for category_sum in data:
+            text = f'  - {category_sum.category_name}: {category_sum.amount:.0f}'
+            if display_limits and category_sum.monthly_limit:
+                text += f' (из {category_sum.monthly_limit:.0f})'
+            rows.append(text)
+        return '_Категории:_\n' + '\n'.join(rows)
+
+    def _format_proportions_block(self, data: ProportionOverPeriodDto) -> str:
+        return (
+            f'_Пропорции:_\n  - текущая: {data.proportion_actual:.2f}\n'
+            f'  - ожидаемая: {data.proportion_target:.2f}'
+        ).replace('.', '\\.')
+
+    def _format_monthly_report(self, data: Dict[Month, SummaryOverPeriodDto], year: int, scope: FillScopeDto) -> str:
         message_text = ''
         for month, data_month in data.items():
             message_text += f'*{month_names[month]} {year}:*\n'
-            for user_sum_month in data_month.by_user:
-                message_text += f'@{user_sum_month.username}: {user_sum_month.amount:.0f}\n'.replace('_', '\\_')
-            message_text += '\n_Категории:_\n'
-            for category_sum_month in data_month.by_category:
-                message_text += f'  - {category_sum_month.category_name}: {category_sum_month.amount:.0f}\n'
+            message_text += self._format_by_user_block(data_month.by_user, scope) + '\n\n'
+            message_text += self._format_by_category_block(data_month.by_category, display_limits=True)
             if scope.scope_type == 'GROUP':
-                message_text += (
-                    f'\n_Пропорции:_\n  - текущая: {data_month.proportions.proportion_actual:.2f}\n'
-                    f'  - ожидаемая: {data_month.proportions.proportion_target:.2f}\n\n'
-                )
-        message_text = (
+                message_text += '\n\n' + self._format_proportions_block(data_month.proportions)
+            message_text += '\n\n'
+        return (
             message_text
-            .replace('.', '\\.')
             .replace('-', '\\-')
             .replace('(', '\\(')
             .replace(')', '\\)')
         )
-        return message_text
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
@@ -282,16 +313,13 @@ class CardFillingBot(Bot):
         scope = self.card_fill_service.get_scope(callback_query.message.chat.chat_id)
         data = self.card_fill_service.get_yearly_report(year, scope)
         diagram = self.graph_service.create_by_category_diagram(data.by_category, name=str(year))
-        caption = (
-            f'*За {year} год:*\n'
-            + '\n'.join([f'@{user_data.username}: {user_data.amount:.0f}' for user_data in data.by_user])
-        )
+
+        caption = f'*За {year} год:*\n'
+        caption += self._format_by_user_block(data.by_user, scope) + '\n\n'
+        caption += self._format_by_category_block(data.by_category, display_limits=False)
         if scope.scope_type == 'GROUP':
-            caption += (
-                f'\n\n*Пропорции*\n  - текущая: {data.proportions.proportion_actual:.2f}\n'
-                + f'  - ожидаемая: {data.proportions.proportion_target:.2f}'
-            )
-        caption = caption.replace('_', '\\_').replace('-', '\\-').replace('.', '\\.')
+            caption += '\n\n' + self._format_proportions_block(data.proportions)
+        caption = caption.replace('-', '\\-')
         self.send_photo(
             callback_query.message.chat.chat_id, photo=diagram, caption=caption, parse_mode=ParseMode.MarkdownV2
         )

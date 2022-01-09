@@ -96,3 +96,21 @@ class FillScope(Base):
             f'{super().__repr__()}: '
             f'<"scope_id": {self.scope_id}, "scope_type": {self.scope_type}, "chat_id": {self.chat_id}>'
         )
+
+
+class Budget(Base):
+    __tablename__ = 'budget'
+
+    id = Column('id', Integer, primary_key=True)
+    fill_scope = Column(Integer, ForeignKey('fill_scope.scope_id'))
+    scope = relationship('FillScope', lazy='subquery')
+    category_code = Column(String, ForeignKey('category.code'))
+    category = relationship('Category', lazy='subquery')
+    monthly_limit = Column('monthly_limit', Float)
+
+    def __repr__(self) -> str:
+        return (
+            f'{super().__repr__()}: '
+            f'<"id": {self.id}, "fill_scope":{self.fill_scope}, '
+            f'"category_code": {self.category_code}, "monthly_limit": {self.monthly_limit}>'
+        )

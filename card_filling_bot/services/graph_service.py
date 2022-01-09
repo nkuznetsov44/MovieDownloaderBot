@@ -14,9 +14,7 @@ class GraphService:
         fig = plt.figure()
         ax = fig.add_axes([0, 0, 1, 1])
         ax.axis('equal')
-        _, _, autotexts = ax.pie(data, labels=labels, autopct="")
-        for i, a in enumerate(autotexts):
-            a.set_text(f'{data[i]:.0f}')
+        ax.pie(data, labels=labels, autopct='%1.1f%%')
         ax.set_title(name)
 
         buf = BytesIO()
