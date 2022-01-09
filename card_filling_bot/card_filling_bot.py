@@ -86,6 +86,16 @@ class CardFillingBot(Bot):
             if fill.description:
                 reply_text += f': {fill.description}'
             reply_text += f', категория: {fill.category.name}.'
+
+            budget = self.card_fill_service.get_budget_for_category(fill.category, fill.scope)
+            if budget:
+                current_category_usage = self.card_fill_service.get_current_month_budget_usage_for_category(
+                    fill.category, fill.scope
+                )
+                reply_text += (
+                    f'\nИспользовано {current_category_usage.amount:.0f} из {current_category_usage.monthly_limit:.0f}.'
+                )
+
             change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
             self.send_message(
@@ -158,6 +168,15 @@ class CardFillingBot(Bot):
         if fill.description:
             reply_text += f' ({fill.description})'
         reply_text += f' изменена на "{fill.category.name}".'
+
+        budget = self.card_fill_service.get_budget_for_category(fill.category, fill.scope)
+        if budget:
+            current_category_usage = self.card_fill_service.get_current_month_budget_usage_for_category(
+                fill.category, fill.scope
+            )
+            reply_text += (
+                f'\nИспользовано {current_category_usage.amount:.0f} из {current_category_usage.monthly_limit:.0f}.'
+            )
 
         change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])

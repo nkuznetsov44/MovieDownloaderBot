@@ -31,7 +31,7 @@ class FillScopeDto:
     chat_id: int
 
     @staticmethod
-    def from_model(scope: FillScope) -> 'FillScope':
+    def from_model(scope: FillScope) -> 'FillScopeDto':
         return FillScopeDto(
             scope_id=scope.scope_id,
             scope_type=scope.scope_type,

@@ -59,9 +59,6 @@ class Category(Base):
     proportion = Column('proportion', Numeric)
     card_fills = relationship('CardFill')
 
-    def __repr__(self) -> str:
-        return f'{super().__repr__()}: <"name": {self.name}>'
-
     def get_aliases(self) -> List[str]:
         return self.aliases.split(',')
 

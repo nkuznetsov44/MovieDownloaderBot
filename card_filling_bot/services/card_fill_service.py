@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, TYPE_CHECKING
 from dataclasses import dataclass
+from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from model import CardFill, Category, TelegramUser, FillScope, Budget
@@ -9,7 +10,6 @@ from dto import (
     FillScopeDto, BudgetDto
 )
 if TYPE_CHECKING:
-    from datetime import datetime
     from logging import Logger
 
 
@@ -310,7 +310,7 @@ class CardFillService:
         finally:
             self.DbSession.remove()
 
-    def get_monthly_limit_for_category(self, category: CategoryDto, scope: FillScopeDto) -> Optional[BudgetDto]:
+    def get_budget_for_category(self, category: CategoryDto, scope: FillScopeDto) -> Optional[BudgetDto]:
         db_session = self.DbSession()
         try:
             budget = (
@@ -328,3 +328,17 @@ class CardFillService:
             return None
         finally:
             self.DbSession.remove()
+
+    def get_current_month_budget_usage_for_category(
+        self, category: CategoryDto, scope: FillScopeDto
+    ) -> Optional[CategorySumOverPeriodDto]:
+        current_month, current_year = Month(datetime.now().month), datetime.now().year
+        current_month_usage_by_category = self.get_monthly_report_by_category(
+            months=[current_month], year=current_year, scope=scope
+        )[current_month]
+        return next(
+            filter(
+                lambda cat_data: cat_data.category_name == category.name,
+                current_month_usage_by_category
+            ), None
+        )
