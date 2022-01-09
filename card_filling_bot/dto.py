@@ -1,12 +1,10 @@
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List
 from dataclasses import dataclass
+from dataclasses_json import dataclass_json
+from datetime import datetime
 from enum import Enum
 from telegramapi.types import User as TelegramapiUser
 from model import CardFill, FillScope, TelegramUser, Category, Budget
-
-if TYPE_CHECKING:
-    from datetime import datetime
-    from decimal import Decimal
 
 
 class Month(Enum):
@@ -24,6 +22,7 @@ class Month(Enum):
     december = 12
 
 
+@dataclass_json
 @dataclass
 class FillScopeDto:
     scope_id: Optional[int]
@@ -39,6 +38,7 @@ class FillScopeDto:
         )
 
 
+@dataclass_json
 @dataclass
 class CategoryDto:
     code: str
@@ -56,6 +56,7 @@ class CategoryDto:
         )
 
 
+@dataclass_json
 @dataclass
 class UserDto:
     id: int
@@ -88,11 +89,12 @@ class UserDto:
         )
 
 
+@dataclass_json
 @dataclass
 class FillDto:
     id: Optional[int]
     user: UserDto
-    fill_date: 'datetime'
+    fill_date: datetime
     amount: str
     description: Optional[str]
     category: Optional[CategoryDto]
@@ -111,6 +113,7 @@ class FillDto:
         )
 
 
+@dataclass_json
 @dataclass
 class BudgetDto:
     id: int

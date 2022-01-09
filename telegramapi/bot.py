@@ -139,7 +139,7 @@ class Bot(metaclass=BotMeta):
 
     def delete_webhook(self, drop_pending_updates: Optional[bool] = None):
         response = self._make_request('deleteWebhook')
-        if not response == True:
+        if not response:
             raise TelegramApiException(f'Failed to delete webhook {response}')
 
     def set_webhook(
