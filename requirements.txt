@@ -24,3 +24,4 @@ urllib3==1.25.9
 Werkzeug==2.0.1
 zipp==3.6.0
 matplotlib==3.5.1
+redis==4.1.0

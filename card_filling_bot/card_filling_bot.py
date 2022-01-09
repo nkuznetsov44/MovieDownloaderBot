@@ -13,6 +13,7 @@ from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
 from message_parsers.new_category_message_parser import NewCategoryMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
+from services.cache_service import CacheService, CacheServiceSettings
 from services.graph_service import GraphService
 
 if TYPE_CHECKING:
@@ -41,6 +42,10 @@ class CardFillingBotSettings:
     mysql_password: str
     mysql_host: str
     mysql_database: str
+    redis_host: str
+    redis_port: int
+    redis_db: str
+    redis_password: str
     minor_proportion_user_id: int
     major_proportion_user_id: int
     logger: 'Logger'
@@ -60,6 +65,14 @@ class CardFillingBot(Bot):
             logger=settings.logger,
         )
         self.card_fill_service = CardFillService(card_fill_service_settings)
+        cache_service_settings = CacheServiceSettings(
+            redis_host=settings.redis_host,
+            redis_port=settings.redis_port,
+            redis_db=settings.redis_db,
+            redis_password=settings.redis_password,
+            logger=settings.logger
+        )
+        self.cache_service = CacheService(cache_service_settings)
         self.graph_service = GraphService()
 
     @message_handler()
@@ -127,13 +140,17 @@ class CardFillingBot(Bot):
                     f'\nИспользовано {current_category_usage.amount:.0f} из {current_category_usage.monthly_limit:.0f}.'
                 )
 
-            change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
-            delete_fill = InlineKeyboardButton(text='Удалить пополнение', callback_data=f'delete_fill{fill.id}')
+            change_category = InlineKeyboardButton(text='Сменить категорию', callback_data='show_category')
+            delete_fill = InlineKeyboardButton(text='Удалить пополнение', callback_data='delete_fill')
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category], [delete_fill]])
-            self.send_message(
+            sent_message = self.send_message(
                 chat_id=parsed_message.original_message.chat.chat_id,
                 text=reply_text,
                 reply_markup=keyboard
+            )
+            self.cache_service.set(sent_message.message_id, fill.id)
+            self.logger.info(
+                f'For message id {sent_message.message_id} put fill id {fill.id} to cache'
             )
         except:
             self.send_message(
@@ -166,7 +183,8 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['show_category'])
     def show_category(self, callback_query: CallbackQuery) -> None:
-        fill_id = int(callback_query.data.replace('show_category', ''))
+        fill_id = self.cache_service.get(callback_query.message.message_id)
+        self.logger.info(f'For message id {callback_query.message.message_id} got fill id {fill_id} from cache')
         fill = self.card_fill_service.get_fill_by_id(fill_id)
         categories = self.card_fill_service.list_categories()
 
@@ -224,7 +242,8 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['delete_fill'])
     def delete_fill(self, callback_query: CallbackQuery) -> None:
-        fill_id = int(callback_query.data.replace('delete_fill', ''))
+        fill_id = self.cache_service.get(callback_query.message.message_id)
+        self.logger.info(f'For message id {callback_query.message.message_id} got fill id {fill_id} from cache')
         fill = self.card_fill_service.get_fill_by_id(fill_id)
         self.card_fill_service.delete_fill(fill)
         self.send_message(

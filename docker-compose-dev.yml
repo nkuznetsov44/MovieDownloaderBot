@@ -13,6 +13,14 @@ services:
     environment:
       - MARIADB_ALLOW_EMPTY_ROOT_PASSWORD=yes
       - MARIADB_DATABASE=CardFillingBot
+  redis-dev:
+    build:
+      dockerfile: Dockerfile-redis
+      context: .
+    image: nkuznetsov44/cardfillingbot-redis:${ENVIRONMENT}
+    container_name: cardfillingbot-dev-redis
+    volumes:
+      - ./card_filling_bot/redis/redis-dev.conf:/usr/local/etc/redis/redis.conf
   cardfillingbot:
     build:
       dockerfile: Dockerfile-cardfillingbot
@@ -21,6 +29,7 @@ services:
     container_name: cardfillingbot-dev
     depends_on:
       - mariadb-dev
+      - redis-dev
     ports:
       - ${HOST_EXPOSED_PORT}:8000
     environment:
@@ -29,7 +38,9 @@ services:
       - MYSQL_PASSWORD=card_filling_bot_dev
       - MYSQL_HOST=mariadb-dev
       - MYSQL_DATABASE=CardFillingBot
+      - REDIS_HOST=redis-dev
+      - REDIS_DB=0
+      - REDIS_PASSWORD=card_filling_bot_dev
       - WEBHOOK_URL=${WEBHOOK_URL}
       - MINOR_PROPORTION_USER_ID=${MINOR_PROPORTION_USER_ID}
       - MAJOR_PROPORTION_USER_ID=${MAJOR_PROPORTION_USER_ID}
-    restart: unless-stopped
