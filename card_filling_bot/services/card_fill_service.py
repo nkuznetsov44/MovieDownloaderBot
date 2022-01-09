@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from model import CardFill, Category, TelegramUser, FillScope, Budget
@@ -63,11 +64,10 @@ class CardFillService:
             self.DbSession.remove()
 
     def get_scope(self, chat_id: int) -> FillScopeDto:
-        self.logger.info(f'Trying to get scope for chat id {chat_id}')
         db_session = self.DbSession()
         try:
             scope = db_session.query(FillScope).filter(FillScope.chat_id == chat_id).one_or_none()
-            self.logger.info(f'Got scope {scope}')
+            self.logger.info(f'For chat {chat_id} identified scope {scope}')
             return FillScopeDto.from_model(scope)
         finally:
             self.DbSession.remove()
@@ -121,10 +121,35 @@ class CardFillService:
         finally:
             self.DbSession.remove()
 
+    def delete_fill(self, fill: FillDto) -> None:
+        db_session = self.DbSession()
+        try:
+            fill_obj = db_session.query(CardFill).get(fill.id)
+            db_session.delete(fill_obj)
+            db_session.commit()
+            self.logger.info(f'Delete fill {fill}')
+        finally:
+            self.DbSession.remove()
+
     def list_categories(self) -> List[CategoryDto]:
         db_session = self.DbSession()
         try:
             return [CategoryDto.from_model(cat) for cat in db_session.query(Category).all()]
+        finally:
+            self.DbSession.remove()
+
+    def create_new_category(self, category: CategoryDto) -> CategoryDto:
+        db_session = self.DbSession()
+        try:
+            category_obj = Category(
+                code=category.code,
+                name=category.name,
+                aliases='',
+                proportion=Decimal(f'{category.proportion:.2f}')
+            )
+            db_session.add(category_obj)
+            db_session.commit()
+            self.logger.info(f'Create category {category_obj}')
         finally:
             self.DbSession.remove()
 

@@ -1,4 +1,4 @@
-from typing import List, Dict, TYPE_CHECKING
+from typing import List, Dict, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
 from telegramapi.bot import Bot, message_handler, callback_query_handler
@@ -11,6 +11,7 @@ from dto import (
 from message_parsers import IParsedMessage
 from message_parsers.month_message_parser import Month, MonthMessageParser
 from message_parsers.fill_message_parser import FillMessageParser
+from message_parsers.new_category_message_parser import NewCategoryMessageParser
 from services.card_fill_service import CardFillService, CardFillServiceSettings
 from services.graph_service import GraphService
 
@@ -65,6 +66,13 @@ class CardFillingBot(Bot):
     def basic_message_handler(self, message: Message) -> None:
         if message.text:
             self.logger.info(f'Received message {message.text}')
+
+            new_category_message = NewCategoryMessageParser(self.card_fill_service, self.logger).parse(message)
+            if new_category_message:
+                self.logger.info(f'Found new category {new_category_message.data}')
+                self.handle_new_category_parsed_message(new_category_message)
+                return
+
             fill_message = FillMessageParser(self.card_fill_service).parse(message)
             if fill_message:
                 self.logger.info(f'Found fill {fill_message.data}')
@@ -77,6 +85,29 @@ class CardFillingBot(Bot):
                 self.handle_months_parsed_message(months_message)
                 return
         self.handle_message_fallback(message)
+
+    def handle_new_category_parsed_message(self, parsed_message: IParsedMessage[Tuple[CategoryDto, FillDto]]) -> None:
+        try:
+            category, fill = parsed_message.data
+            self.card_fill_service.create_new_category(category)
+            fill = self.card_fill_service.change_category_for_fill(fill_id=fill.id, target_category_code=category.code)
+            text = (
+                'Создана новую категория:\n'
+                f'  - название: {category.name}\n  - код: {category.code}\n'
+                f'  - пропорция: {category.proportion:.2f}.\n\n'
+                f'Категория пополнения {fill.amount} р.'
+            )
+            if fill.description:
+                text += f' ({fill.description})'
+            text += f' изменена на "{fill.category.name}".'
+        except:
+            text = 'Ошибка создания категории.'
+            self.logger.exception('Ошибка создания категории')
+        self.send_message(
+            chat_id=parsed_message.original_message.chat.chat_id,
+            text=text,
+            reply_to_message_id=parsed_message.original_message.message_id
+        )
 
     def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
         fill = parsed_message.data
@@ -97,7 +128,8 @@ class CardFillingBot(Bot):
                 )
 
             change_category = InlineKeyboardButton(text='Сменить категорию', callback_data=f'show_category{fill.id}')
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category]])
+            delete_fill = InlineKeyboardButton(text='Удалить пополнение', callback_data=f'delete_fill{fill.id}')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[change_category], [delete_fill]])
             self.send_message(
                 chat_id=parsed_message.original_message.chat.chat_id,
                 text=reply_text,
@@ -108,7 +140,7 @@ class CardFillingBot(Bot):
                 chat_id=parsed_message.original_message.chat.chat_id,
                 text='Ошибка добавления пополнения.'
             )
-            raise
+            self.logger.exception('Ошибка добавления пополнения')
 
     def handle_months_parsed_message(self, parsed_message: IParsedMessage[List[Month]]) -> None:
         months = parsed_message.data
@@ -127,7 +159,7 @@ class CardFillingBot(Bot):
         self.send_message(
             chat_id=message.chat.chat_id,
             text=(
-                'Укажите сумму и комментарий в сообщении, например: "150 макдак", для добавления новой записи,'
+                'Укажите сумму и комментарий в сообщении, например: "150 макдак", для добавления новой записи, '
                 'или один или несколько месяцев, например, "январь февраль", для просмотра статистики.'
             )
         )
@@ -147,6 +179,9 @@ class CardFillingBot(Bot):
                     InlineKeyboardButton(text=cat.name, callback_data=f'change_category{cat.code}/{fill_id}')
                 )
             keyboard_buttons.append(buttons_group)
+        keyboard_buttons.append([InlineKeyboardButton(
+            text='СОЗДАТЬ НОВУЮ КАТЕГОРИЮ', callback_data=f'new_category{fill_id}')
+        ])
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
         reply_text = f'Выберите категорию для пополнения {fill.amount} р.'
@@ -185,6 +220,29 @@ class CardFillingBot(Bot):
             chat_id=callback_query.message.chat.chat_id,
             text=reply_text,
             reply_markup=keyboard
+        )
+
+    @callback_query_handler(accepted_data=['delete_fill'])
+    def delete_fill(self, callback_query: CallbackQuery) -> None:
+        fill_id = int(callback_query.data.replace('delete_fill', ''))
+        fill = self.card_fill_service.get_fill_by_id(fill_id)
+        self.card_fill_service.delete_fill(fill)
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=f'Пополнение {fill.amount} р. ({fill.description}) удалено.'
+        )
+
+    @callback_query_handler(accepted_data=['new_category'])
+    def create_new_category(self, callback_query: CallbackQuery) -> None:
+        fill_id = int(callback_query.data.replace('new_category', ''))
+        fill = self.card_fill_service.get_fill_by_id(fill_id)
+        self.send_message(
+            chat_id=callback_query.message.chat.chat_id,
+            text=(
+                f'Создание категории для пополнения номер {fill.id}: {fill.amount} р. ({fill.description}).\n'
+                'Ответом на это сообщение пришлите название, код и пропорцию для новой категории через запятую, '
+                'например "Еда, FOOD, 0.8".'
+            )
         )
 
     @staticmethod

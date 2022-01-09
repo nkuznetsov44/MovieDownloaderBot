@@ -44,13 +44,15 @@ class CategoryDto:
     code: str
     name: str
     aliases: List[str]
+    proportion: float
 
     @staticmethod
     def from_model(category: Category) -> 'CategoryDto':
         return CategoryDto(
             code=category.code,
             name=category.name,
-            aliases=category.get_aliases()
+            aliases=category.get_aliases(),
+            proportion=category.proportion
         )
 
 

@@ -60,6 +60,8 @@ class Category(Base):
     card_fills = relationship('CardFill')
 
     def get_aliases(self) -> List[str]:
+        if self.aliases == '':
+            return []
         return self.aliases.split(',')
 
     def add_alias(self, alias: str) -> None:
@@ -68,8 +70,6 @@ class Category(Base):
         self.aliases = ','.join(aliases)
 
     def fill_fits_category(self, fill_description: str) -> bool:
-        if self.code == 'OTHER':
-            return False
         aliases_re = [re.compile(alias, re.IGNORECASE) for alias in self.get_aliases()]
         return any(pattern.match(fill_description) for pattern in aliases_re)
 
