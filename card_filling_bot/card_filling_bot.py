@@ -115,8 +115,8 @@ class CardFillingBot(Bot):
             reply_markup=keyboard,
             reply_to_message_id=parsed_message.original_message.message_id
         )
-        self.cache_service.set_fill_for_message(sent_message.message_id, fill)
-        self.cache_service.set_category_for_message(sent_message.message_id, category)
+        self.cache_service.set_fill_for_message(sent_message, fill)
+        self.cache_service.set_category_for_message(sent_message, category)
 
     def handle_fill_parsed_message(self, parsed_message: IParsedMessage[FillDto]) -> None:
         fill = parsed_message.data
@@ -144,7 +144,7 @@ class CardFillingBot(Bot):
                 text=reply_text,
                 reply_markup=keyboard
             )
-            self.cache_service.set_fill_for_message(sent_message.message_id, fill)
+            self.cache_service.set_fill_for_message(sent_message, fill)
         except:
             self.send_message(
                 chat_id=parsed_message.original_message.chat.chat_id,
@@ -163,7 +163,7 @@ class CardFillingBot(Bot):
             text=f'Выбраны месяцы: {", ".join(map(month_names.get, months))}. Какая информация интересует?',
             reply_markup=keyboard
         )
-        self.cache_service.set_months_for_message(sent_message.message_id, months)
+        self.cache_service.set_months_for_message(sent_message, months)
 
     def handle_message_fallback(self, message: Message) -> None:
         self.send_message(
@@ -176,7 +176,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['show_category'])
     def show_category(self, callback_query: CallbackQuery) -> None:
-        fill = self.cache_service.get_fill_for_message(callback_query.message.message_id)
+        fill = self.cache_service.get_fill_for_message(callback_query.message)
         categories = self.card_fill_service.list_categories()
 
         keyboard_buttons = []
@@ -201,12 +201,12 @@ class CardFillingBot(Bot):
             text=reply_text,
             reply_markup=keyboard
         )
-        self.cache_service.set_fill_for_message(sent_message.message_id, fill)
+        self.cache_service.set_fill_for_message(sent_message, fill)
 
     @callback_query_handler(accepted_data=['change_category'])
     def change_category(self, callback_query: CallbackQuery) -> None:
         category_code = callback_query.data.replace('change_category', '')
-        fill = self.cache_service.get_fill_for_message(callback_query.message.message_id)
+        fill = self.cache_service.get_fill_for_message(callback_query.message)
         fill = self.card_fill_service.change_category_for_fill(fill.id, category_code)
 
         reply_text = f'Категория пополнения {fill.amount} р.'
@@ -230,11 +230,11 @@ class CardFillingBot(Bot):
             text=reply_text,
             reply_markup=keyboard
         )
-        self.cache_service.set_fill_for_message(sent_message.message_id, fill)
+        self.cache_service.set_fill_for_message(sent_message, fill)
 
     @callback_query_handler(accepted_data=['delete_fill'])
     def delete_fill(self, callback_query: CallbackQuery) -> None:
-        fill = self.cache_service.get_fill_for_message(callback_query.message.message_id)
+        fill = self.cache_service.get_fill_for_message(callback_query.message)
         self.card_fill_service.delete_fill(fill)
         self.send_message(
             chat_id=callback_query.message.chat.chat_id,
@@ -243,7 +243,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['new_category'])
     def create_new_category(self, callback_query: CallbackQuery) -> None:
-        fill = self.cache_service.get_fill_for_message(callback_query.message.message_id)
+        fill = self.cache_service.get_fill_for_message(callback_query.message)
         sent_message = self.send_message(
             chat_id=callback_query.message.chat.chat_id,
             text=(
@@ -252,17 +252,17 @@ class CardFillingBot(Bot):
                 'например "Еда, FOOD, 0.8".'
             )
         )
-        self.cache_service.set_fill_for_message(sent_message.message_id, fill)
+        self.cache_service.set_fill_for_message(sent_message, fill)
 
     @callback_query_handler(accepted_data=['confirm_new_category'])
     def confirm_new_category(self, callback_query: CallbackQuery) -> None:
-        fill = self.cache_service.get_fill_for_message(callback_query.message.message_id)
-        category = self.cache_service.get_category_for_message(callback_query.message.message_id)
+        fill = self.cache_service.get_fill_for_message(callback_query.message)
+        category = self.cache_service.get_category_for_message(callback_query.message)
         try:
             self.card_fill_service.create_new_category(category)
             fill = self.card_fill_service.change_category_for_fill(fill_id=fill.id, target_category_code=category.code)
             text = (
-                f'Создана новая категория "{category.name}"\n'
+                f'Создана новая категория "{category.name}".\n'
                 f'Категория пополнения {fill.amount} р.'
             )
             if fill.description:
@@ -289,7 +289,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['my'])
     def my_fills_current_year(self, callback_query: CallbackQuery) -> None:
-        months = self.cache_service.get_months_for_message(callback_query.message.message_id)
+        months = self.cache_service.get_months_for_message(callback_query.message)
         year = datetime.now().year
         from_user = UserDto.from_telegramapi(callback_query.from_user)
         scope = self.card_fill_service.get_scope(callback_query.message.chat.chat_id)
@@ -303,11 +303,11 @@ class CardFillingBot(Bot):
         sent_message = self.send_message(
             chat_id=callback_query.message.chat.chat_id, text=message_text, reply_markup=keyboard
         )
-        self.cache_service.set_months_for_message(sent_message.message_id, months)
+        self.cache_service.set_months_for_message(sent_message, months)
 
     @callback_query_handler(accepted_data=['fills_previous_year'])
     def my_fills_previous_year(self, callback_query: CallbackQuery) -> None:
-        months = self.cache_service.get_months_for_message(callback_query.message.message_id)
+        months = self.cache_service.get_months_for_message(callback_query.message)
         previous_year = datetime.now().year - 1
         from_user = UserDto.from_telegramapi(callback_query.from_user)
         scope = self.card_fill_service.get_scope(callback_query.message.chat.chat_id)
@@ -356,7 +356,7 @@ class CardFillingBot(Bot):
 
     @callback_query_handler(accepted_data=['stat'])
     def per_month_current_year(self, callback_query: CallbackQuery) -> None:
-        months = self.cache_service.get_months_for_message(callback_query.message.message_id)
+        months = self.cache_service.get_months_for_message(callback_query.message)
         year = datetime.now().year
         scope = self.card_fill_service.get_scope(callback_query.message.chat.chat_id)
         data = self.card_fill_service.get_monthly_report(months, year, scope)
@@ -378,7 +378,7 @@ class CardFillingBot(Bot):
                     parse_mode=ParseMode.MarkdownV2,
                     reply_markup=keyboard
                 )
-                self.cache_service.set_months_for_message(sent_message.message_id, months)
+                self.cache_service.set_months_for_message(sent_message, months)
                 return
         sent_message = self.send_message(
             chat_id=callback_query.message.chat.chat_id,
@@ -386,11 +386,11 @@ class CardFillingBot(Bot):
             parse_mode=ParseMode.MarkdownV2,
             reply_markup=keyboard
         )
-        self.cache_service.set_months_for_message(sent_message.message_id, months)
+        self.cache_service.set_months_for_message(sent_message, months)
 
     @callback_query_handler(accepted_data=['previous_year'])
     def per_month_previous_year(self, callback_query: CallbackQuery) -> None:
-        months = self.cache_service.get_months_for_message(callback_query.message.message_id)
+        months = self.cache_service.get_months_for_message(callback_query.message)
         previous_year = datetime.now().year - 1
         scope = self.card_fill_service.get_scope(callback_query.message.chat.chat_id)
         data = self.card_fill_service.get_monthly_report(months, previous_year, scope)
@@ -408,14 +408,14 @@ class CardFillingBot(Bot):
                     caption=message_text,
                     parse_mode=ParseMode.MarkdownV2
                 )
-                self.cache_service.set_months_for_message(sent_message.message_id, months)
+                self.cache_service.set_months_for_message(sent_message, months)
                 return
         sent_message = self.send_message(
             chat_id=callback_query.message.chat.chat_id,
             text=message_text,
             parse_mode=ParseMode.MarkdownV2
         )
-        self.cache_service.set_months_for_message(sent_message.message_id, months)
+        self.cache_service.set_months_for_message(sent_message, months)
 
     @callback_query_handler(accepted_data=['yearly_stat'])
     def per_year(self, callback_query: CallbackQuery) -> None:

@@ -25,7 +25,7 @@ class NewCategoryMessageParser(IMessageParser[Tuple[CategoryDto, FillDto]]):
             cat_name = cat_name.strip()
             cat_code = cat_code.strip()
             cat_proportion = float(cat_proportion.strip())
-            fill = self.cache_service.get_fill_for_message(message.reply_to_message.message_id)
+            fill = self.cache_service.get_fill_for_message(message.reply_to_message)
             aliases = []
             if fill.description:
                 aliases.append(fill.description)

@@ -1,6 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
 from dataclasses import dataclass
 import redis
+from telegramapi.types import Message
 from dto import FillDto, CategoryDto, Month
 
 if TYPE_CHECKING:
@@ -32,38 +33,51 @@ class CacheService:
             f'db={cache_service_settings.redis_db}'
         )
 
-    def set_fill_for_message(self, message_id: int, fill: FillDto) -> None:
+    def set_fill_for_message(self, message: Message, fill: FillDto) -> None:
         fill_json = fill.to_json()
-        self.rdb.set(f'{message_id}_fill', fill_json)
-        self.logger.info(f'Save to cache fill {fill_json} for message {message_id}')
+        self.rdb.set(f'{message.chat.chat_id}_{message.message_id}_fill', fill_json)
+        self.logger.debug(
+            f'Save to cache fill {fill_json} for chat {message.chat.chat_id}, message {message.message_id}'
+        )
 
-    def get_fill_for_message(self, message_id: int) -> Optional[FillDto]:
-        fill_json = self.rdb.get(f'{message_id}_fill')
-        self.logger.info(f'Get from cache fill {fill_json} for message {message_id}')
+    def get_fill_for_message(self, message: Message) -> Optional[FillDto]:
+        fill_json = self.rdb.get(f'{message.chat.chat_id}_{message.message_id}_fill')
+        self.logger.info(
+            f'Get from cache fill {fill_json} for chat {message.chat.chat_id}, message {message.message_id}'
+        )
         if not fill_json:
             return None
         return FillDto.from_json(fill_json)
 
-    def set_months_for_message(self, message_id: int, months: List[Month]) -> None:
+    def set_months_for_message(self, message: Message, months: List[Month]) -> None:
         month_numbers = [str(month.value) for month in months]
-        self.rdb.set(f'{message_id}_months', ','.join(month_numbers))
-        self.logger.info(f'Save to cache months {month_numbers} for message {message_id}')
+        self.rdb.set(f'{message.chat.chat_id}_{message.message_id}_months', ','.join(month_numbers))
+        self.logger.debug(
+            f'Save to cache months {month_numbers} for chat {message.chat.chat_id}, message {message.message_id}'
+        )
 
-    def get_months_for_message(self, message_id) -> Optional[List[Month]]:
-        month_numbers = self.rdb.get(f'{message_id}_months').split(',')
+    def get_months_for_message(self, message: Message) -> Optional[List[Month]]:
+        month_numbers = self.rdb.get(f'{message.chat.chat_id}_{message.message_id}_months').split(',')
         if not month_numbers:
             return None
-        self.logger.info(f'Get from cache months {month_numbers} for message {message_id}')
+        self.logger.debug(
+            f'Get from cache months {month_numbers} for for chat {message.chat.chat_id}, message {message.message_id}'
+        )
         return [Month(int(month_number)) for month_number in month_numbers]
 
-    def set_category_for_message(self, message_id: int, category: CategoryDto) -> None:
+    def set_category_for_message(self, message: Message, category: CategoryDto) -> None:
         category_json = category.to_json()
-        self.rdb.set(f'{message_id}_category', category_json)
-        self.logger.info(f'Save to cache category {category} for message {message_id}')
+        self.rdb.set(f'{message.chat.chat_id}_{message.message_id}_category', category_json)
+        self.logger.debug(
+            f'Save to cache category {category} for message for '
+            f'chat {message.chat.chat_id}, message {message.message_id}'
+        )
 
-    def get_category_for_message(self, message_id: int) -> Optional[CategoryDto]:
-        category_json = self.rdb.get(f'{message_id}_category')
-        self.logger.info(f'Get from cache category {category_json} for message {message_id}')
+    def get_category_for_message(self, message: Message) -> Optional[CategoryDto]:
+        category_json = self.rdb.get(f'{message.chat.chat_id}_{message.message_id}_category')
+        self.logger.debug(
+            f'Get from cache category {category_json} for for chat {message.chat.chat_id}, message {message.message_id}'
+        )
         if not category_json:
             return None
         return CategoryDto.from_json(category_json)
